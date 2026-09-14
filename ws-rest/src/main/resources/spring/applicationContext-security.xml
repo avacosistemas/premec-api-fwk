@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans:beans
+	xmlns="http://www.springframework.org/schema/security"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:beans="http://www.springframework.org/schema/beans"
+	xmlns:sec="http://www.springframework.org/schema/security"
+	xmlns:ctx="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/security	 
+      http://www.springframework.org/schema/security/spring-security-4.2.xsd
+      http://www.springframework.org/schema/beans 
+      http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+      http://www.springframework.org/schema/context
+	  http://www.springframework.org/schema/context/spring-context.xsd">
+
+	<http entry-point-ref="restAuthenticationEntryPoint"
+		use-expressions="true" create-session="stateless">
+
+		<csrf disabled="true" />
+
+		<!-- Públicos -->
+		<intercept-url pattern="/auth/**" access="permitAll" />
+		<intercept-url pattern="/monitor" method="GET"
+			access="permitAll" />
+
+		<intercept-url pattern="/formulario" method="POST"
+			access="permitAll" />
+		<intercept-url pattern="/formulariosEnviarJsonSap"
+			method="POST" access="permitAll" />
+		<intercept-url pattern="/quitarArchivoColaEnvio"
+			method="GET" access="permitAll" />
+		<intercept-url pattern="/validarHorasMaquina"
+			method="GET" access="permitAll" />
+		<intercept-url pattern="/password/reset"
+			access="permitAll" />
+
+		<intercept-url pattern="/actividadesPorServiceCall"
+			access="permitAll" />
+		<intercept-url pattern="/descargarreporte"
+			access="permitAll" />
+
+		<!-- Swagger -->
+		<intercept-url pattern="/swagger-ui.html"
+			access="permitAll" />
+		<intercept-url pattern="/swagger-ui/**"
+			access="permitAll" />
+		<intercept-url pattern="/v3/api-docs" access="permitAll" />
+		<intercept-url pattern="/v3/api-docs/**"
+			access="permitAll" />
+		<intercept-url pattern="/swagger-resources/**"
+			access="permitAll" />
+		<intercept-url pattern="/webjars/**" access="permitAll" />
+		<intercept-url pattern="/v2/api-docs" access="permitAll" />
+		<intercept-url pattern="/problemaMaquina/*" method="GET"
+			access="permitAll" />
+		<intercept-url pattern="/tipoProblemaMaquina"
+			method="GET" access="permitAll" />
+		<!-- Protegidos -->
+		<intercept-url pattern="/auth/reset-password"
+			access="isAuthenticated()" />
+		<intercept-url pattern="/actividades" method="GET"
+			access="isAuthenticated()" />
+		<intercept-url pattern="/formulario" method="POST"
+			access="isAuthenticated()" />
+
+		<!-- Default -->
+		<intercept-url pattern="/**" access="isAuthenticated()" />
+
+		<!-- JWT filter ANTES del auth tradicional -->
+		<custom-filter ref="tokenFilter"
+			before="FORM_LOGIN_FILTER" />
+
+		<logout />
+	</http>
+
+	<!-- <authentication-manager -->
+	<!-- alias="authenticationManager"> -->
+	<!-- <authentication-provider -->
+	<!-- user-service-ref="jwtUserDetailsService"> -->
+	<!-- <sec:password-encoder ref="passwordEncoder" /> -->
+	<!-- </authentication-provider> -->
+	<!-- </authentication-manager> -->
+
+	<ctx:component-scan
+		base-package="ar.com.avaco.premec.ws.controller" />
+
+</beans:beans>

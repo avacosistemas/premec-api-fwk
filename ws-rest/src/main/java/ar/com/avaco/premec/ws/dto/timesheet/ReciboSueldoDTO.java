@@ -1,0 +1,114 @@
+package ar.com.avaco.premec.ws.dto.timesheet;
+
+import java.math.BigDecimal;
+
+public class ReciboSueldoDTO {
+
+	private int legajo;
+	private String nombreCompleto;
+	private String periodo;
+	private BigDecimal neto;
+	private BigDecimal sueldoJornal;
+	private String tipo;
+	private String observaciones;
+	private Boolean aprobado;
+	private String descripcion;
+	private String timeInMilis;
+
+	public ReciboSueldoDTO() {
+	}
+
+	public ReciboSueldoDTO(int legajo, String nombreCompleto, String periodo, BigDecimal neto, String tipo,
+			String descripcion, String timeInMilis, BigDecimal sueldoJornal) {
+		super();
+		this.legajo = legajo;
+		this.nombreCompleto = nombreCompleto;
+		this.periodo = periodo;
+		this.neto = neto;
+		this.tipo = tipo;
+		this.descripcion = descripcion;
+		this.timeInMilis = timeInMilis;
+		this.sueldoJornal = sueldoJornal;
+	}
+
+	public BigDecimal getSueldoJornal() {
+		return sueldoJornal;
+	}
+
+	public void setSueldoJornal(BigDecimal sueldoJornal) {
+		this.sueldoJornal = sueldoJornal;
+	}
+
+	public String getTimeInMilis() {
+		return timeInMilis;
+	}
+
+	public void setTimeInMilis(String timeInMilis) {
+		this.timeInMilis = timeInMilis;
+	}
+
+	public String getDescripcion() {
+		return descripcion;
+	}
+
+	public void setDescripcion(String descripcion) {
+		this.descripcion = descripcion;
+	}
+
+	public int getLegajo() {
+		return legajo;
+	}
+
+	public void setLegajo(int legajo) {
+		this.legajo = legajo;
+	}
+
+	public String getNombreCompleto() {
+		return nombreCompleto;
+	}
+
+	public void setNombreCompleto(String nombreCompleto) {
+		this.nombreCompleto = nombreCompleto;
+	}
+
+	public String getPeriodo() {
+		return periodo;
+	}
+
+	public void setPeriodo(String periodo) {
+		this.periodo = periodo;
+	}
+
+	public BigDecimal getNeto() {
+		return neto;
+	}
+
+	public void setNeto(BigDecimal neto) {
+		this.neto = neto;
+	}
+
+	public String getTipo() {
+		return tipo;
+	}
+
+	public void setTipo(String tipo) {
+		this.tipo = tipo;
+	}
+
+	public String getObservaciones() {
+		return observaciones;
+	}
+
+	public void setObservaciones(String observaciones) {
+		this.observaciones = observaciones;
+	}
+
+	public Boolean getAprobado() {
+		return aprobado;
+	}
+
+	public void setAprobado(Boolean aprobado) {
+		this.aprobado = aprobado;
+	}
+
+}

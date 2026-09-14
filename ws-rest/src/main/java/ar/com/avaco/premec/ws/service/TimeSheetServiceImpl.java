@@ -1,0 +1,300 @@
+package ar.com.avaco.premec.ws.service;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.log4j.Logger;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
+import ar.com.avaco.fwk.core.exception.ErrorValidationException;
+import ar.com.avaco.premec.sap.exception.SapBusinessException;
+import ar.com.avaco.premec.ws.dto.timesheet.ProjectManagementTimeSheetAttachDTO;
+import ar.com.avaco.premec.ws.dto.timesheet.ProjectManagementTimeSheetAttachResponse;
+import ar.com.avaco.premec.ws.dto.timesheet.ProjectManagementTimeSheetGetDTO;
+import ar.com.avaco.premec.ws.dto.timesheet.ProjectManagementTimeSheetLinesResponse;
+
+@Service("timeSheetService")
+public class TimeSheetServiceImpl extends AbstractSapService implements TimeSheetService {
+
+	private Logger logger = Logger.getLogger(TimeSheetServiceImpl.class);
+	
+	@Override
+	public Long generarTimeSheet(Long usuarioSap, String from, String to, BigDecimal neto, BigDecimal sueldoJornal) {
+		Map<String, Object> pmtsMap = new HashMap<>();
+		pmtsMap.put("UserID", usuarioSap);
+		pmtsMap.put("DateFrom", from);
+		pmtsMap.put("DateTo", to);
+		
+		if (sueldoJornal != null)
+			pmtsMap.put("U_salario", sueldoJornal);
+		
+		if (neto != null)
+			pmtsMap.put("U_sueldoneto ", neto);
+
+		String pmtsUrlPost = urlSAP + "/ProjectManagementTimeSheet";
+		HttpEntity<Map<String, Object>> httpEntityAttach = new HttpEntity<>(pmtsMap);
+
+		ResponseEntity<String> pmtsResponse = null;
+		try {
+			pmtsResponse = getRestTemplate().doExchange(pmtsUrlPost, HttpMethod.POST, httpEntityAttach,
+					new ParameterizedTypeReference<String>() {
+					});
+		} catch (SapBusinessException e) {
+			Map<String, String> errors = new HashMap<String, String>();
+			errors.put("url", pmtsUrlPost);
+			errors.put("error", e.getMessage());
+			e.printStackTrace();
+			throw new ErrorValidationException("Error al ejecutar el siguiente WS", errors);
+		}
+
+		Long absEntry = gson.fromJson(pmtsResponse.getBody(), JsonObject.class).get("AbsEntry").getAsLong();
+		return absEntry;
+	}
+
+	public Long generarTimeSheet(Long usuarioSap, String from, String to) {
+		return generarTimeSheet(usuarioSap, from, to, null, null);
+	}
+
+	@Override
+	public TimeSheetEntryAttach getTimeSheetEntries(Long usuarioSap, String from, String to) {
+		// Armo el parametro de la actividad
+		String fechaDesde = "'" + from + "'";
+		String fechaHasta = "'" + to + "'";
+
+		String urlObtenerEntryPMTSGet = urlSAP
+				+ "/ProjectManagementTimeSheet?$select=AbsEntry,AttachmentEntry&$filter=UserID eq " + usuarioSap
+				+ " and DateFrom eq " + fechaDesde + " and DateTo eq " + fechaHasta;
+
+		ResponseEntity<String> entrySetPMTSResponse;
+		try {
+			entrySetPMTSResponse = getRestTemplate().doExchange(urlObtenerEntryPMTSGet, HttpMethod.GET, null,
+					new ParameterizedTypeReference<String>() {
+					});
+
+		} catch (SapBusinessException e) {
+			Map<String, String> errors = new HashMap<String, String>();
+			errors.put("url", urlObtenerEntryPMTSGet);
+			errors.put("error", e.getMessage());
+			e.printStackTrace();
+			throw new ErrorValidationException("Error al ejecutar el siguiente WS", errors);
+		}
+
+		JsonArray pmtsEntryArray = gson.fromJson(entrySetPMTSResponse.getBody(), JsonObject.class)
+				.getAsJsonArray("value");
+
+		TimeSheetEntryAttach ret = new TimeSheetEntryAttach();
+
+		// Si obtengo un registros es porque el entry ya existe. Obtengo el entry y el
+		// attachment
+		if (pmtsEntryArray.size() == 1) {
+			ret.setAbsEntry(pmtsEntryArray.get(0).getAsJsonObject().get("AbsEntry").getAsLong());
+			JsonElement jsonElement = pmtsEntryArray.get(0).getAsJsonObject().get("AttachmentEntry");
+			// El attachment puede o no existir
+			if (!jsonElement.isJsonNull()) {
+				ret.setAttachmentEntry(jsonElement.getAsLong());
+			}
+		}
+
+		return ret;
+	}
+	
+	@Override
+	public void updateTimeSheet(Long absEntry, Long newAttachmentEntry) {
+		updateTimeSheet(absEntry, newAttachmentEntry, null, null);
+	}
+
+	@Override
+	public void updateTimeSheet(Long absEntry, Long newAttachmentEntry, BigDecimal neto, BigDecimal sueldoJornal) {
+		String timeSheetPatchEntry = urlSAP + "/ProjectManagementTimeSheet(" + absEntry + ")";
+
+		Map<String, Object> timesheetpatch = new HashMap<>();
+		timesheetpatch.put("AttachmentEntry", newAttachmentEntry);
+
+		if (sueldoJornal != null)
+			timesheetpatch.put("U_salario", sueldoJornal);
+		
+		if (neto != null)
+			timesheetpatch.put("U_sueldoneto", neto);
+		
+		HttpHeaders headers = getRestTemplate().getDefaultHeaders();
+		HttpEntity<Map<String, Object>> httpEntityPatchServiceCall = new HttpEntity<>(timesheetpatch, headers);
+
+		try {
+
+			getRestTemplate().doExchange(timeSheetPatchEntry, HttpMethod.PATCH, httpEntityPatchServiceCall,
+					Object.class);
+		} catch (SapBusinessException e) {
+			Map<String, String> errors = new HashMap<String, String>();
+			errors.put("url", timeSheetPatchEntry);
+			errors.put("error", e.getMessage());
+			e.printStackTrace();
+			throw new ErrorValidationException("Error al ejecutar el siguiente WS", errors);
+		}
+	}
+
+	@Override
+	public void updateTimeSheetAttachmentEntry(Long absEntry, Map<String, Object> timesheetpatch) {
+		String timeSheetPatchEntry = urlSAP + "/ProjectManagementTimeSheet(" + absEntry + ")";
+		
+		HttpHeaders headers = getRestTemplate().getDefaultHeaders();
+		HttpEntity<Map<String, Object>> httpEntityPatchServiceCall = new HttpEntity<>(timesheetpatch, headers);
+		
+		try {
+			getRestTemplate().doExchange(timeSheetPatchEntry, HttpMethod.PATCH, httpEntityPatchServiceCall,
+					Object.class);
+		} catch (SapBusinessException e) {
+			Map<String, String> errors = new HashMap<String, String>();
+			errors.put("url", timeSheetPatchEntry);
+			errors.put("error", e.getMessage());
+			e.printStackTrace();
+			throw new ErrorValidationException("Error al ejecutar el siguiente WS", errors);
+		}
+	}
+
+	@Override
+	public List<ProjectManagementTimeSheetAttachDTO> listTimeSheetByUsuarioSap(Long usuarioSAP) {
+		// Preparo la url para enviar el attachment
+		String attachmentUrl = urlSAP
+				+ "/ProjectManagementTimeSheet?$filter=UserID eq {userId} and AttachmentEntry ne null&$expand=Attachments2&$orderby=DateFrom desc";
+		attachmentUrl = attachmentUrl.replace("{userId}", usuarioSAP.toString());
+
+		ResponseEntity<ProjectManagementTimeSheetAttachResponse> timeshteeRespose = null;
+
+		try {
+			timeshteeRespose = getRestTemplate().doExchange(attachmentUrl, HttpMethod.GET, null,
+					ProjectManagementTimeSheetAttachResponse.class);
+		} catch (SapBusinessException e) {
+			Map<String, String> errors = new HashMap<String, String>();
+			errors.put("url", attachmentUrl);
+			errors.put("error", e.getMessage());
+			e.printStackTrace();
+			throw new ErrorValidationException("Error al ejecutar el siguiente WS", errors);
+		}
+
+		List<ProjectManagementTimeSheetAttachDTO> registros = timeshteeRespose.getBody().getValue();
+
+		return registros;
+	}
+
+	@Override
+	public void updateTimeSheetLines(ProjectManagementTimeSheetGetDTO lineGroup) {
+
+		String timeSheetPatchLines = urlSAP + "/ProjectManagementTimeSheet(" + lineGroup.getAbsEntry() + ")";
+
+		HttpHeaders headers = getRestTemplate().getDefaultHeaders();
+		HttpEntity<Map<String, Object>> httpEntityPatchServiceCall = new HttpEntity<>(
+				lineGroup.getAsMapUpdateTimeSheetLines(), headers);
+
+		try {
+			getRestTemplate().doExchange(timeSheetPatchLines, HttpMethod.PATCH, httpEntityPatchServiceCall,
+					Object.class);
+		} catch (SapBusinessException e) {
+			Map<String, String> errors = new HashMap<String, String>();
+			errors.put("url", timeSheetPatchLines);
+			errors.put("error", e.getMessage());
+			e.printStackTrace();
+			throw new ErrorValidationException("Error al ejecutar el siguiente WS", errors);
+		}
+
+	}
+
+	@Override
+	public ProjectManagementTimeSheetGetDTO getTimeSheet(Long usuarioSap, String from, String to) {
+		// Armo el parametro de la actividad
+		String fechaDesde = "'" + from + "'";
+		String fechaHasta = "'" + to + "'";
+
+		String urlObtenerPMTSGet = urlSAP + "/ProjectManagementTimeSheet?$filter=UserID eq " + usuarioSap
+				+ " and DateFrom eq " + fechaDesde + " and DateTo eq " + fechaHasta;
+
+		ResponseEntity<ProjectManagementTimeSheetLinesResponse> timeshteeRespose = null;
+
+		try {
+			timeshteeRespose = getRestTemplate().doExchange(urlObtenerPMTSGet, HttpMethod.GET, null,
+					ProjectManagementTimeSheetLinesResponse.class);
+		} catch (SapBusinessException e) {
+			Map<String, String> errors = new HashMap<String, String>();
+			errors.put("url", urlObtenerPMTSGet);
+			errors.put("error", e.getMessage());
+			e.printStackTrace();
+			throw new ErrorValidationException("Error al ejecutar el siguiente WS", errors);
+		}
+
+		ProjectManagementTimeSheetGetDTO projectManagementTimeSheetGetDTO = null;
+		List<ProjectManagementTimeSheetGetDTO> value = timeshteeRespose.getBody().getValue();
+		if (value != null && !value.isEmpty())
+			projectManagementTimeSheetGetDTO = value.get(0);
+
+		return projectManagementTimeSheetGetDTO;
+
+	}
+
+	@Override
+	public List<ProjectManagementTimeSheetGetDTO> getTimeSheets(String from, String to) {
+		
+		logger.debug("Obteniendo timesheets");
+		
+		// Armo el parametro de la actividad
+		String fechaDesde = "'" + from + "'";
+		String fechaHasta = "'" + to + "'";
+		
+		String urlObtenerPMTSGet = urlSAP + "/ProjectManagementTimeSheet?$filter=DateFrom eq " + fechaDesde + " and DateTo eq " + fechaHasta;
+		
+		ResponseEntity<ProjectManagementTimeSheetLinesResponse> timeshteeRespose = null;
+
+		List<ProjectManagementTimeSheetGetDTO> list = new ArrayList<ProjectManagementTimeSheetGetDTO>();
+		
+		ObjectMapper mapper = new ObjectMapper();
+		mapper.enable(SerializationFeature.INDENT_OUTPUT);
+				
+		while (urlObtenerPMTSGet != null && !urlObtenerPMTSGet.isEmpty()) {
+		
+			try {
+
+				logger.debug("URL: " + urlObtenerPMTSGet);
+				
+				timeshteeRespose = getRestTemplate().doExchange(urlObtenerPMTSGet, HttpMethod.GET, null,
+						ProjectManagementTimeSheetLinesResponse.class);
+							
+				List<ProjectManagementTimeSheetGetDTO> res = timeshteeRespose.getBody().getValue();
+				
+				list.addAll(res);
+				
+				urlObtenerPMTSGet = timeshteeRespose.getBody().getNextLink();
+				
+				if (urlObtenerPMTSGet != null && !urlObtenerPMTSGet.isEmpty()) {
+					logger.debug("Hay mas registros para procesar");
+					urlObtenerPMTSGet = urlSAP + "/" + urlObtenerPMTSGet.replace("%20", " ");
+				} else {
+					logger.debug("No hay mas registros para procesar");
+				}
+				
+			} catch (SapBusinessException e) {
+				Map<String, String> errors = new HashMap<String, String>();
+				errors.put("url", urlObtenerPMTSGet);
+				errors.put("error", e.getMessage());
+				e.printStackTrace();
+				throw new ErrorValidationException("Error al ejecutar el siguiente WS", errors);
+			}
+		}
+		
+		return list;
+		
+	}
+
+}

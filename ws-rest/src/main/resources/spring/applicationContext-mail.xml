@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans:beans xmlns:beans="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns="http://www.springframework.org/schema/context"
+	xmlns:mvc="http://www.springframework.org/schema/mvc"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans 
+		http://www.springframework.org/schema/beans/spring-beans-4.3.xsd
+		http://www.springframework.org/schema/aop
+		http://www.springframework.org/schema/aop/spring-aop-4.3.xsd
+		http://www.springframework.org/schema/context 
+		http://www.springframework.org/schema/context/spring-context-4.3.xsd
+		http://www.springframework.org/schema/mvc
+		http://www.springframework.org/schema/mvc/spring-mvc-4.3.xsd">	    
+
+<!-- 	<beans:bean id="mailSender" class="org.springframework.mail.javamail.JavaMailSenderImpl"> -->
+<!-- 		<beans:property name="host" value="${mailsender.host}" /> -->
+<!-- 		<beans:property name="port" value="${mailsender.port}" /> -->
+<!-- 		<beans:property name="username" value="${mailsender.username}" /> -->
+<!-- 		<beans:property name="password" value="${mailsender.password}" /> -->
+
+<!-- 		<beans:property name="javaMailProperties"> -->
+<!-- 		   <beans:props> -->
+<!-- 	       	      <beans:prop key="mail.smtp.auth">true</beans:prop> -->
+<!-- 	       	      <beans:prop key="mail.smtp.starttls.enable">false</beans:prop> -->
+<!-- 	       	      <beans:prop key="mail.smtp.ssl.trust">${mailsender.host}</beans:prop> -->
+<!-- 	       	      <beans:prop key="mail.smtp.timeout">5000</beans:prop> -->
+<!-- 	       	   </beans:props> -->
+<!-- 		</beans:property> -->
+<!-- 	</beans:bean>     -->
+	
+<!-- 	<beans:bean id="mailSenderSMTPService" class="ar.com.avaco.fwk.core.service.mail.MailSenderSMTPServiceImpl"></beans:bean> -->
+	
+</beans:beans>
