@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 
 public class ReciboSueldoDTO {
 
-	private int legajo;
+	private Long legajo;
 	private String nombreCompleto;
 	private String periodo;
 	private BigDecimal neto;
@@ -18,7 +18,7 @@ public class ReciboSueldoDTO {
 	public ReciboSueldoDTO() {
 	}
 
-	public ReciboSueldoDTO(int legajo, String nombreCompleto, String periodo, BigDecimal neto, String tipo,
+	public ReciboSueldoDTO(Long legajo, String nombreCompleto, String periodo, BigDecimal neto, String tipo,
 			String descripcion, String timeInMilis, BigDecimal sueldoJornal) {
 		super();
 		this.legajo = legajo;
@@ -55,11 +55,11 @@ public class ReciboSueldoDTO {
 		this.descripcion = descripcion;
 	}
 
-	public int getLegajo() {
+	public Long getLegajo() {
 		return legajo;
 	}
 
-	public void setLegajo(int legajo) {
+	public void setLegajo(Long legajo) {
 		this.legajo = legajo;
 	}
 

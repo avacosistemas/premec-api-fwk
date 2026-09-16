@@ -37,7 +37,7 @@ public class GrupoEmpleado extends ar.com.avaco.fwk.core.domain.Entity<Long> {
 	@ManyToMany(fetch = FetchType.EAGER)
 	@JoinTable(name = "GRUPO_EMPLEADO_USUARIO", joinColumns = @JoinColumn(name = "ID_GRUPO_EMPLEADO", referencedColumnName = "ID_GRUPO_EMPLEADO"), inverseJoinColumns = @JoinColumn(name = "ID_SEG_USUARIO", referencedColumnName = "ID_SEG_USUARIO"))
 	@Fetch(FetchMode.SELECT)
-	private Set<Usuario> usuarios = new HashSet<>();
+	private Set<UsuarioPremec> usuarios = new HashSet<>();
 
 	public String getNombre() {
 		return nombre;
@@ -55,11 +55,11 @@ public class GrupoEmpleado extends ar.com.avaco.fwk.core.domain.Entity<Long> {
 		this.id = id;
 	}
 
-	public Set<Usuario> getUsuarios() {
+	public Set<UsuarioPremec> getUsuarios() {
 		return usuarios;
 	}
 
-	public void setUsuarios(Set<Usuario> usuarios) {
+	public void setUsuarios(Set<UsuarioPremec> usuarios) {
 		this.usuarios = usuarios;
 	}
 

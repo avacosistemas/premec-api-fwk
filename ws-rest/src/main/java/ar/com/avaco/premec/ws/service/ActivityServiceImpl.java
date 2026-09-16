@@ -28,6 +28,8 @@ import com.google.common.collect.Lists;
 import ar.com.avaco.fwk.security.domain.Usuario;
 import ar.com.avaco.fwk.security.repository.UsuarioRepository;
 import ar.com.avaco.fwk.security.service.impl.UsuarioServiceImpl;
+import ar.com.avaco.premec.domain.UsuarioPremec;
+import ar.com.avaco.premec.repository.UsuarioPremecRepository;
 import ar.com.avaco.premec.ws.dto.actividad.HorasPorEmpleadoDTO;
 import ar.com.avaco.premec.ws.dto.actividad.RegistroPreviewEmpleadoMensualDTO;
 import ar.com.avaco.premec.ws.dto.employee.FueraConvenio;
@@ -41,7 +43,8 @@ public class ActivityServiceImpl extends AbstractSapService implements ActivityS
 	@Autowired
 	private SQLServerConnection sqlcon;
 
-	private UsuarioRepository usuarioRepository;
+	@Autowired
+	private UsuarioPremecRepository usuarioPremecRepository;
 
 	@Override
 	public List<RegistroPreviewEmpleadoMensualDTO> obtenerActividadesValoradasSinAgrupar(String fechaDesde,
@@ -57,7 +60,7 @@ public class ActivityServiceImpl extends AbstractSapService implements ActivityS
 	private List<RegistroPreviewEmpleadoMensualDTO> obtenerActividadesValoradas(String fechaDesde, String fechaHasta, String exclusiones, 
 			List<Long> idsUsuariosSap, boolean agrupadas) {
 
-		List<Usuario> usuarios = usuarioRepository.findAll();
+		List<UsuarioPremec> usuarios = usuarioPremecRepository.findAll();
 
 		StringBuilder sql = new StringBuilder();
 			sql.append(" SELECT ");
@@ -195,13 +198,13 @@ public class ActivityServiceImpl extends AbstractSapService implements ActivityS
 //				preview.setSalario(rs.getBigDecimal("salario").toString());
 //				preview.setUnidadSalario(rs.getString("unidadSalario"));
 
-				Optional<Usuario> usuario = usuarios.stream()
+				Optional<UsuarioPremec> usuario = usuarios.stream()
 						.filter(x -> x.getUsuariosap().equals(preview.getUsuarioSap().toString())).findFirst();
 				if (usuario.isPresent()) {
 					preview.setLegajo(usuario.get().getLegajo());
 				} else {
 					// Error
-					preview.setLegajo(-1);
+					preview.setLegajo(-1L);
 				}
 
 				lista.add(preview);
@@ -317,7 +320,6 @@ public class ActivityServiceImpl extends AbstractSapService implements ActivityS
 			json = mapper.writeValueAsString(lista);
 			System.out.println(json);
 		} catch (JsonProcessingException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 		
@@ -532,11 +534,6 @@ public class ActivityServiceImpl extends AbstractSapService implements ActivityS
 		m.setGratificaciones(rs.getString("Gratificaciones"));
 		m.setTarde(rs.getString("tarde"));
 		return m;
-	}
-
-	@Resource(name = "usuarioRepository")
-	public void setUsuarioRepository(UsuarioRepository usuarioRepository) {
-		this.usuarioRepository = usuarioRepository;
 	}
 
 	@Override

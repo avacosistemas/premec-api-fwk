@@ -34,7 +34,7 @@ import ar.com.avaco.fwk.commons.service.mail.MailSenderSMTPService;
 import ar.com.avaco.fwk.core.exception.ErrorValidationException;
 import ar.com.avaco.fwk.core.utils.DateUtils;
 import ar.com.avaco.fwk.core.utils.NumberUtils;
-import ar.com.avaco.fwk.security.service.UsuarioService;
+import ar.com.avaco.premec.service.UsuarioPremecService;
 import ar.com.avaco.premec.utils.BuscarTextoYStripper;
 import ar.com.avaco.premec.ws.dto.attachment.AttachmentLine;
 import ar.com.avaco.premec.ws.dto.attachment.ResponseAttachmentGetPost;
@@ -72,7 +72,7 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 	private MailSenderSMTPService sender;
 
 	@Autowired
-	private UsuarioService usuarioService;
+	private UsuarioPremecService usuarioPremecService;
 
 	@Autowired
 	private TimeSheetService timeSheetService;
@@ -90,10 +90,10 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 		for (ReciboSueldoDTO recibo : lista) {
 
 			// Obtengo usuario sap
-			String usuarioSap = usuarioService.getUsuarioSAPByLegajo(recibo.getLegajo());
+			String usuarioSap = usuarioPremecService.getUsuarioSAPByLegajo(recibo.getLegajo());
 
 			// Obtengo legajo
-			String legajo = Integer.toString(recibo.getLegajo());
+			String legajo = recibo.getLegajo().toString();
 
 			String timeInMilis = recibo.getTimeInMilis();
 			String descripcion = recibo.getDescripcion();
@@ -227,9 +227,6 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 
 		try (PDDocument document = PDDocument.load(archivo)) {
 
-			
-			float pageHeight = document.getPage(0).getMediaBox().getHeight();
-			
 			// Seteo las areas que se repiten en todos las hojas
 			// legajo, periodo, descripcion, nombre y sueldo/jornal
 
@@ -251,7 +248,7 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 			Rectangle rectSueldoJornal = new Rectangle(490, 210, 100, 12);
 			stripper.addRegion("sueldoJornal", rectSueldoJornal);
 
-			Map<Integer, ReciboSueldoArchivoDTO> docsPorLegajo = new LinkedHashMap<>();
+			Map<Long, ReciboSueldoArchivoDTO> docsPorLegajo = new LinkedHashMap<>();
 
 			// Por cada hoja el archivo
 			for (int i = 0; i < document.getNumberOfPages(); i++) {
@@ -261,7 +258,7 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 				stripper.extractRegions(page);
 
 				// Obtengo el legajo
-				Integer legajo = Integer.parseInt(stripper.getTextForRegion("legajo").replaceAll("\\s+", "").trim());
+				Long legajo = Long.parseLong(stripper.getTextForRegion("legajo").replaceAll("\\s+", "").trim());
 
 				// obtengo el recibo con archivo del mapa para ver si existe o no uno
 				ReciboSueldoArchivoDTO reciboConArchivo = docsPorLegajo.get(legajo);
@@ -316,7 +313,7 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 
 			}
 
-			for (Map.Entry<Integer, ReciboSueldoArchivoDTO> entry : docsPorLegajo.entrySet()) {
+			for (Map.Entry<Long, ReciboSueldoArchivoDTO> entry : docsPorLegajo.entrySet()) {
 
 				ReciboSueldoDTO recibo = entry.getValue().getReciboSueldo();
 				PDDocument pdfdoc = entry.getValue().getDocument();
@@ -517,7 +514,7 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 		String username = SecurityContextHolder.getContext().getAuthentication().getName();
 
 		// Obtengo el usuario SAP
-		String usuarioSAP = usuarioService.getUsuarioSAPByUsername(username);
+		String usuarioSAP = usuarioPremecService.getUsuarioSAP(username);
 
 		// Si tiene usuario sap
 		if (StringUtils.isBlank(usuarioSAP)) {
@@ -582,7 +579,7 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 
 		Logger logger = Logger.getLogger(ReciboSueldoServiceImpl.class);
 		String name = SecurityContextHolder.getContext().getAuthentication().getName();
-		String usuarioSAP = this.usuarioService.getUsuarioSAP(name);
+		String usuarioSAP = this.usuarioPremecService.getUsuarioSAP(name);
 		EmployeesInfoReponseSapDTO empleado = this.employeeService.getById(Long.parseLong(usuarioSAP));
 
 		ResponseAttachmentGetPost attachmentFirma = attachmentService.getAttachment(empleado.getAttachmentEntry());

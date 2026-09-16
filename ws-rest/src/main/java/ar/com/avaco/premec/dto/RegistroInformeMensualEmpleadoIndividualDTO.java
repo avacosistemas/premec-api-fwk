@@ -1,10 +1,8 @@
 package ar.com.avaco.premec.dto;
 
-import java.util.HashMap;
-import java.util.Map;
-
 public class RegistroInformeMensualEmpleadoIndividualDTO {
-	private Integer legajo;
+	
+	private Long legajo;
 
 	private Long usuarioSap;
 
@@ -42,11 +40,11 @@ public class RegistroInformeMensualEmpleadoIndividualDTO {
 
 	private String cumplimientoObjetivo;
 
-	public Integer getLegajo() {
+	public Long getLegajo() {
 		return legajo;
 	}
 
-	public void setLegajo(Integer legajo) {
+	public void setLegajo(Long legajo) {
 		this.legajo = legajo;
 	}
 

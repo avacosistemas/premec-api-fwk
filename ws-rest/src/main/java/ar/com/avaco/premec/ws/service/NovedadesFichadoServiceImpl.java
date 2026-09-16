@@ -25,16 +25,18 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import ar.com.avaco.fwk.core.exception.ErrorValidationException;
 import ar.com.avaco.fwk.core.utils.DateUtils;
-import ar.com.avaco.fwk.security.domain.Usuario;
 import ar.com.avaco.fwk.security.repository.UsuarioRepository;
+import ar.com.avaco.premec.domain.UsuarioPremec;
 import ar.com.avaco.premec.dto.EmpleadoFichados;
 import ar.com.avaco.premec.dto.EmpleadoSap;
 import ar.com.avaco.premec.dto.RegistroFichadoDTO;
+import ar.com.avaco.premec.repository.UsuarioPremecRepository;
 import ar.com.avaco.premec.sap.exception.SapBusinessException;
 import ar.com.avaco.premec.ws.dto.actividad.HorasPorEmpleadoDTO;
 import ar.com.avaco.premec.ws.dto.employee.EmployeesInfoReponseSapDTO;
@@ -44,12 +46,16 @@ import ar.com.avaco.premec.ws.dto.timesheet.ProjectManagementTimeSheetLineGetDTO
 @Service("novedadesFichadoService")
 public class NovedadesFichadoServiceImpl extends AbstractSapService implements NovedadesFichadoService {
 
-	private UsuarioRepository usuarioRepository;
+	@Autowired
+	private UsuarioPremecRepository usuarioPremecRepository;
 
+	@Autowired
 	private TimeSheetService timeSheetService;
 
+	@Autowired
 	private EmployeeService employeeService;
 
+	@Autowired
 	private ActivityService activityService;
 
 	private final Logger logger = Logger.getLogger(this.getClass());
@@ -89,7 +95,7 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 				String[] partes = legajoNombre.split(" ");
 				String legajo = partes[0].trim();
 
-				Usuario usuario = usuarioRepository.findByLegajo(Integer.parseInt(legajo));
+				UsuarioPremec usuario = usuarioPremecRepository.findByLegajo(Long.parseLong(legajo));
 
 				EmpleadoSap empleado = new EmpleadoSap();
 				if (usuario != null) {
@@ -593,26 +599,6 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 
 	private String generarEntryMapa(String usuarioSap, String dia) {
 		return usuarioSap + "-" + dia;
-	}
-
-	@Resource(name = "usuarioRepository")
-	public void setUsuarioRepository(UsuarioRepository usuarioRepository) {
-		this.usuarioRepository = usuarioRepository;
-	}
-
-	@Resource(name = "timeSheetService")
-	public void setTimeSheetService(TimeSheetService timeSheetService) {
-		this.timeSheetService = timeSheetService;
-	}
-
-	@Resource(name = "employeeService")
-	public void setEmployeeService(EmployeeService employeeService) {
-		this.employeeService = employeeService;
-	}
-
-	@Resource(name = "activityService")
-	public void setActivityService(ActivityService activityService) {
-		this.activityService = activityService;
 	}
 
 	private static String getCellValue(Cell cell) {

@@ -6,10 +6,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import javax.annotation.Resource;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -24,23 +23,23 @@ import com.google.gson.JsonObject;
 import com.google.gson.internal.LinkedTreeMap;
 
 import ar.com.avaco.fwk.commons.service.mail.MailSenderSMTPService;
-import ar.com.avaco.fwk.security.service.UsuarioService;
 import ar.com.avaco.premec.sap.exception.SapBusinessException;
+import ar.com.avaco.premec.service.UsuarioPremecService;
 import ar.com.avaco.premec.ws.dto.repuesto.RepuestoDepositoDTO;
 
 @Service("repuestoService")
 public class RepuestoEPServiceImpl extends AbstractSapService implements RepuestoEPService {
 
-	private static final Logger LOGGER = Logger.getLogger(RepuestoEPServiceImpl.class);
+	@Autowired
+	private UsuarioPremecService usuarioPremecService;
 
-	private UsuarioService usuarioService;
-
+	@Autowired
 	private MailSenderSMTPService mailService;
 
 	@Override
 	public List<RepuestoDepositoDTO> getRepuestos(String username) throws Exception {
 
-		String deposito = usuarioService.getDeposito(username);
+		String deposito = usuarioPremecService.getDeposito(username);
 
 		String repuestosUrl = urlSAP + "/$crossjoin(Items,Items/ItemWarehouseInfoCollection)?$expand=Items"
 				+ "($select=ItemCode,ItemName),Items/ItemWarehouseInfoCollection"
@@ -173,13 +172,4 @@ public class RepuestoEPServiceImpl extends AbstractSapService implements Repuest
 		return repuesto;
 	}
 
-	@Resource(name = "usuarioService")
-	public void setUsuarioService(UsuarioService usuarioService) {
-		this.usuarioService = usuarioService;
-	}
-
-	@Resource(name = "mailSenderSMTPService")
-	public void setMailService(MailSenderSMTPService mailService) {
-		this.mailService = mailService;
-	}
 }

@@ -4,10 +4,10 @@ import java.util.List;
 
 import ar.com.avaco.fwk.core.component.epservice.CRUDEPService;
 import ar.com.avaco.premec.dto.GrupoEmpleadoDTO;
-import ar.com.avaco.premec.dto.UsuarioDTO;
+import ar.com.avaco.premec.dto.UsuarioEmpleadoDTO;
 
 public interface GrupoEmpleadoEPService extends CRUDEPService<Long, GrupoEmpleadoDTO> {
 
-	List<UsuarioDTO> listUsuarios();
+	List<UsuarioEmpleadoDTO> listUsuarios();
 
 }

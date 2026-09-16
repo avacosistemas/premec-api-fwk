@@ -2,17 +2,17 @@ package ar.com.avaco.premec.dto;
 
 import ar.com.avaco.fwk.core.component.dto.DTOEntity;
 
-public class UsuarioDTO extends DTOEntity<Long> {
+public class UsuarioEmpleadoDTO extends DTOEntity<Long> {
 
 	private Long id;
 
 	private String usuario;
 
-	public UsuarioDTO() {
+	public UsuarioEmpleadoDTO() {
 		// TODO Auto-generated constructor stub
 	}
 
-	public UsuarioDTO(Long idUsr, String nombreApellidoUsername) {
+	public UsuarioEmpleadoDTO(Long idUsr, String nombreApellidoUsername) {
 		this.id = idUsr;
 		this.usuario = nombreApellidoUsername;
 	}

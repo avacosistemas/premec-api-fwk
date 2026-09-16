@@ -2,10 +2,10 @@ package ar.com.avaco.premec.ws.controller;
 
 import javax.annotation.Resource;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,21 +14,27 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import ar.com.avaco.fwk.core.component.dto.JSONResponse;
-import ar.com.avaco.fwk.security.domain.Usuario;
+import ar.com.avaco.premec.dto.UsuarioPremecDTO;
 import ar.com.avaco.premec.ws.dto.formulario.FormularioDTO;
 import ar.com.avaco.premec.ws.service.FormularioEPService;
+import ar.com.avaco.premec.ws.service.UsuarioPremecEPService;
 
 @RestController
 public class FormularioRestController {
 
+	@Autowired
 	private FormularioEPService formularioEPService;
 
+	@Autowired
+	private UsuarioPremecEPService usuarioPremecEPService;
+	
 	@RequestMapping(value = "/formulario", method = RequestMethod.POST, produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<JSONResponse> saveFormulario(@RequestBody FormularioDTO formularioDTO) {
 		JSONResponse response = new JSONResponse();
-		Usuario u = (Usuario) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+		String name = SecurityContextHolder.getContext().getAuthentication().getName();
+		UsuarioPremecDTO usuario = usuarioPremecEPService.findByUsername(name);
 		try {
-			this.formularioEPService.grabarFormulario(formularioDTO, u.getUsuariosap());
+			this.formularioEPService.grabarFormulario(formularioDTO, usuario.getUsuariosap().toString());
 			response.setStatus(JSONResponse.OK);
 		} catch (Exception e) {
 			response.setStatus(JSONResponse.ERROR);

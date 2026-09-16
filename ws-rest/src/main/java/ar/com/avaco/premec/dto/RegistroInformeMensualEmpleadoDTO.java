@@ -2,7 +2,7 @@ package ar.com.avaco.premec.dto;
 
 public class RegistroInformeMensualEmpleadoDTO {
 
-	private Integer legajo;
+	private Long legajo;
 
 	private Long usuarioSap;
 
@@ -59,11 +59,11 @@ public class RegistroInformeMensualEmpleadoDTO {
 
 	private String gratificacionesAumentos;
 
-	public Integer getLegajo() {
+	public Long getLegajo() {
 		return legajo;
 	}
 
-	public void setLegajo(Integer legajo) {
+	public void setLegajo(Long legajo) {
 		this.legajo = legajo;
 	}
 

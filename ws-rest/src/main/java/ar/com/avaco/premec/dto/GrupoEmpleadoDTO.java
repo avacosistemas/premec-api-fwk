@@ -11,7 +11,7 @@ public class GrupoEmpleadoDTO extends DTOEntity<Long> {
 
 	private String nombre;
 
-	private Set<UsuarioDTO> usuarios = new HashSet<>();
+	private Set<UsuarioEmpleadoDTO> usuarios = new HashSet<>();
 
 	public String getNombre() {
 		return nombre;
@@ -21,11 +21,11 @@ public class GrupoEmpleadoDTO extends DTOEntity<Long> {
 		this.nombre = nombre;
 	}
 
-	public Set<UsuarioDTO> getUsuarios() {
+	public Set<UsuarioEmpleadoDTO> getUsuarios() {
 		return usuarios;
 	}
 
-	public void setUsuarios(Set<UsuarioDTO> usuarios) {
+	public void setUsuarios(Set<UsuarioEmpleadoDTO> usuarios) {
 		this.usuarios = usuarios;
 	}
 

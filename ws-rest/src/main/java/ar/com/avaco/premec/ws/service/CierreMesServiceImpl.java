@@ -22,7 +22,9 @@ import ar.com.avaco.fwk.core.utils.DateUtils;
 import ar.com.avaco.fwk.security.domain.Usuario;
 import ar.com.avaco.fwk.security.service.UsuarioService;
 import ar.com.avaco.premec.domain.GrupoEmpleado;
+import ar.com.avaco.premec.domain.UsuarioPremec;
 import ar.com.avaco.premec.service.GrupoEmpleadoService;
+import ar.com.avaco.premec.service.UsuarioPremecService;
 import ar.com.avaco.premec.ws.dto.actividad.RegistroPreviewEmpleadoMensualDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.ProjectManagementTimeSheetGetDTO;
 
@@ -41,7 +43,7 @@ public class CierreMesServiceImpl extends AbstractSapService implements CierreMe
 	private Logger logger = Logger.getLogger(CierreMesServiceImpl.class);
 
 	@Autowired
-	private UsuarioService usuarioService;
+	private UsuarioPremecService usuarioPremecService;
 
 	@Autowired
 	private GrupoEmpleadoService grupoEmpleadoService;
@@ -66,7 +68,7 @@ public class CierreMesServiceImpl extends AbstractSapService implements CierreMe
 	@Override
 	public RegistroPreviewEmpleadoMensualDTO getRegistrosCierreIndividual(String mes, String anio, String usuario) {
 		
-		String usuarioSap = usuarioService.getUsuarioSAPByUsername(usuario);
+		String usuarioSap = usuarioPremecService.getUsuarioSAP(usuario);
 		
 		String fechaDesde = anio + StringUtils.leftPad(mes, 2, "0") + "01";
 		
@@ -164,7 +166,7 @@ public class CierreMesServiceImpl extends AbstractSapService implements CierreMe
 
 		GrupoEmpleado grupoEmpleado = grupoEmpleadoService.get(idGrupoEmpleado);
 		
-		List<Long> idUsuariosSap = grupoEmpleado.getUsuarios().stream().map(Usuario::getUsuariosap).map(Long::valueOf).collect(Collectors.toList());
+		List<Long> idUsuariosSap = grupoEmpleado.getUsuarios().stream().map(UsuarioPremec::getUsuariosap).map(Long::valueOf).collect(Collectors.toList());
 		
 		String fechaDesde = anio + StringUtils.leftPad(mes, 2, "0") + "01";
 		
@@ -189,9 +191,9 @@ public class CierreMesServiceImpl extends AbstractSapService implements CierreMe
 		        .map(Long::valueOf)
 		        .collect(Collectors.toList());
 		
-		List<Usuario> usuarios = usuarioService.getByIds(lista);
+		List<UsuarioPremec> usuarios = usuarioPremecService.getByIds(lista);
 		
-		List<Long> idUsuariosSap = usuarios.stream().map(Usuario::getUsuariosap).map(Long::valueOf).collect(Collectors.toList());
+		List<Long> idUsuariosSap = usuarios.stream().map(UsuarioPremec::getUsuariosap).map(Long::valueOf).collect(Collectors.toList());
 		
 		String fechaDesde = anio + StringUtils.leftPad(mes, 2, "0") + "01";
 		

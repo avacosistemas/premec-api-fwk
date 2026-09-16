@@ -5,7 +5,7 @@ import java.util.Map;
 
 public class RegistroPreviewEmpleadoMensualDTO {
 
-	private Integer legajo;
+	private Long legajo;
 
 	private Long usuarioSap;
 
@@ -80,11 +80,11 @@ public class RegistroPreviewEmpleadoMensualDTO {
 		return map;
 	}
 
-	public Integer getLegajo() {
+	public Long getLegajo() {
 		return legajo;
 	}
 
-	public void setLegajo(Integer legajo) {
+	public void setLegajo(Long legajo) {
 		this.legajo = legajo;
 	}
 

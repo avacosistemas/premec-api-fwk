@@ -54,6 +54,12 @@ public class ClienteServiceImpl extends NJBaseService<Long, Cliente, ClienteRepo
 	@Value("${reclamos.url}")
 	private String urlReclamos;
 	
+	@Value("${nuevo.cliente.asunto}")
+	private String subjectNuevoCliente;
+
+	@Value("${nuevo.cliente.cuerpo}")
+	private String bodyNuevoCliente;
+	
 	@Autowired
 	private PasswordEncoder passwordEncoder;
 
@@ -130,23 +136,19 @@ public class ClienteServiceImpl extends NJBaseService<Long, Cliente, ClienteRepo
 		
 	}
 	
-	private void notificarPasswordNuevoCliente(Cliente cliente, String tmpass) {
-		String subject = "Premec Reclamos - Bievenida";
-		StringBuilder msg = new StringBuilder("¡Bienvenido ");
-		msg.append(cliente.getNombre());
-		msg.append(" al Sistema de Reclamos de Premec! <br>");
-		msg.append("Se le ha asignado una contraseña a su usuario ");
-		msg.append(cliente.getUsername());
-		msg.append(".<br>");
-		msg.append("La contraseña asignada es: <strong>");
-		msg.append(tmpass);
-		msg.append("<br>");
-		msg.append("Para acceder ingrese en el siguiente link <a href='" + urlReclamos + "'>Sistema de Reclamos</a>");
+private void notificarPasswordNuevoCliente(Cliente cliente, String tmpass) {
+		
+		String body = bodyNuevoCliente;
+		body = body.replaceAll("%cliente%", cliente.getNombre());
+		body = body.replaceAll("%usuario%", cliente.getUsername());
+		body = body.replaceAll("%temppass%", tmpass);
+		body = body.replaceAll("%urlreclamos%", urlReclamos);
+		
 		String email = cliente.getEmail();
 		if (test) {
 			email = mailTest;
 		}
-		mailSenderSMTPService.sendMail(from, email, cc, subject.toString(), msg.toString(), null);
+		mailSenderSMTPService.sendMail(from, email, cc, subjectNuevoCliente, body, null);
 	}
 
 	@Resource(name = "clienteRepository")

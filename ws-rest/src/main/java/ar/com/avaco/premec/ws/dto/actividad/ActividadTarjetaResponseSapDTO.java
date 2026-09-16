@@ -6,7 +6,7 @@ import java.util.List;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import ar.com.avaco.fwk.security.dto.User;
+import ar.com.avaco.fwk.security.dto.UsuarioDTO;
 import ar.com.avaco.premec.domain.TipoActividad;
 import ar.com.avaco.premec.ws.dto.UsersResponseSapDTO;
 import ar.com.avaco.premec.ws.dto.employee.EmployeesInfoReponseSapDTO;

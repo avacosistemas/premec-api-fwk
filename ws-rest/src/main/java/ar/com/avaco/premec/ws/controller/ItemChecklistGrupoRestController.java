@@ -1,28 +1,21 @@
 package ar.com.avaco.premec.ws.controller;
 
-import java.util.List;
-
 import javax.annotation.Resource;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import ar.com.avaco.fwk.core.component.controller.AbstractDTORestController;
 import ar.com.avaco.fwk.core.component.dto.JSONResponse;
-import ar.com.avaco.fwk.core.domain.filter.AbstractFilter;
 import ar.com.avaco.fwk.core.exception.BusinessException;
-import ar.com.avaco.fwk.security.domain.Usuario;
 import ar.com.avaco.premec.filter.ItemChecklistGrupoFilter;
 import ar.com.avaco.premec.ws.dto.formulario.ItemChecklistGrupoDTO;
-import ar.com.avaco.premec.ws.dto.repuesto.RepuestoDepositoDTO;
 import ar.com.avaco.premec.ws.service.ItemChecklistGrupoEPService;
 
 @RestController

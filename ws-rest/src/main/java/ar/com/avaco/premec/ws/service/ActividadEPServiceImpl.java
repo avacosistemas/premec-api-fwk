@@ -16,10 +16,10 @@ import java.util.Map;
 import java.util.Optional;
 
 import javax.annotation.PostConstruct;
-import javax.annotation.Resource;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
@@ -43,12 +43,12 @@ import com.ibm.icu.util.Calendar;
 
 import ar.com.avaco.fwk.commons.service.mail.MailSenderSMTPService;
 import ar.com.avaco.fwk.core.utils.DateUtils;
-import ar.com.avaco.fwk.security.service.UsuarioService;
 import ar.com.avaco.premec.domain.GrupoTipoActividad;
 import ar.com.avaco.premec.domain.TipoActividad;
 import ar.com.avaco.premec.filter.GrupoTipoActividadFilter;
 import ar.com.avaco.premec.sap.exception.SapBusinessException;
 import ar.com.avaco.premec.service.GrupoTipoActividadService;
+import ar.com.avaco.premec.service.UsuarioPremecService;
 import ar.com.avaco.premec.ws.dto.RegistroHorasMaquinaDTO;
 import ar.com.avaco.premec.ws.dto.RegistroInformeActividadDTO;
 import ar.com.avaco.premec.ws.dto.RegistroInformeServicioDTO;
@@ -66,10 +66,19 @@ public class ActividadEPServiceImpl extends AbstractSapService implements Activi
 
 	private static final Logger LOGGER = Logger.getLogger(ActividadEPServiceImpl.class);
 
-	private UsuarioService usuarioService;
+	@Autowired
+	private UsuarioPremecService usuarioPremecService;
 
 	@Value("${monitor.palabras.filtro}")
 	private String palabrasFiltroMonitor;
+
+	@Autowired
+	private MailSenderSMTPService mailService;
+
+	private List<String> exclusiones;
+
+	@Autowired
+	private GrupoTipoActividadService grupoTipoActividadService;
 
 	private String employeeUrl;
 	private String locationsUrl;
@@ -79,12 +88,7 @@ public class ActividadEPServiceImpl extends AbstractSapService implements Activi
 	private String actividadUrl;
 	private String actividadesPorServiceCallUrl;
 
-	private MailSenderSMTPService mailService;
-
-	private List<String> exclusiones;
-
-	private GrupoTipoActividadService grupoTipoActividadService;
-
+	
 	@PostConstruct
 	public void onInit() {
 		this.actividadUrl = urlSAP + "/Activities({id})";
@@ -555,7 +559,7 @@ public class ActividadEPServiceImpl extends AbstractSapService implements Activi
 	public List<ActividadTarjetaDTO> getActividades(String fecha, String username) throws Exception {
 
 		// Obtengo el usuario sap del usuario logueado
-		String usuarioSAP = usuarioService.getUsuarioSAPByUsername(username);
+		String usuarioSAP = usuarioPremecService.getUsuarioSAP(username);
 
 		SimpleDateFormat sdfinput = new SimpleDateFormat("yyyyMMdd");
 		SimpleDateFormat sdfoutput = new SimpleDateFormat("yyyy-MM-dd");
@@ -1361,27 +1365,12 @@ public class ActividadEPServiceImpl extends AbstractSapService implements Activi
 
 	}
 
-	@Resource(name = "usuarioService")
-	public void setUsuarioService(UsuarioService usuarioService) {
-		this.usuarioService = usuarioService;
-	}
-
-	@Resource(name = "mailSenderSMTPService")
-	public void setMailService(MailSenderSMTPService mailService) {
-		this.mailService = mailService;
-	}
-
-	@Resource(name = "grupoTipoActividadService")
-	public void setGrupoTipoActividadService(GrupoTipoActividadService grupoTipoActividadService) {
-		this.grupoTipoActividadService = grupoTipoActividadService;
-	}
-
 	@Override
 	public List<ActividadTarjetaDTO> getActividadesCrossJoin(String fecha, String username)
 			throws SapBusinessException {
 
 		// Obtengo el usuario sap del usuario logueado
-		String usuarioSAP = usuarioService.getUsuarioSAPByUsername(username);
+		String usuarioSAP = usuarioPremecService.getUsuarioSAP(username);
 
 		SimpleDateFormat sdfinput = new SimpleDateFormat("yyyyMMdd");
 		SimpleDateFormat sdfoutput = new SimpleDateFormat("yyyy-MM-dd");

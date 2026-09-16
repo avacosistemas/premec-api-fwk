@@ -20,8 +20,8 @@ import com.ibm.icu.util.Calendar;
 
 import ar.com.avaco.fwk.core.utils.DateUtils;
 import ar.com.avaco.fwk.security.domain.Usuario;
-import ar.com.avaco.fwk.security.service.UsuarioService;
 import ar.com.avaco.premec.domain.GrupoEmpleado;
+import ar.com.avaco.premec.domain.UsuarioPremec;
 import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoIndividualDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualGeneralDTO;
@@ -34,7 +34,7 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 	private SQLServerConnection sqlcon;
 
 	@Autowired
-	private UsuarioService usuarioService;
+	private UsuarioPremecService usuarioPremecService;
 	
 	@Autowired
 	private GrupoEmpleadoService grupoEmpleadoService;
@@ -212,7 +212,7 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 	@Override
 	public RegistroInformeMensualEmpleadoDTO getIndicadorMensualIndividual(String mes, String anio, String username) {
 
-		String idUsuarioSap = usuarioService.getUsuarioSAPByUsername(username);
+		String idUsuarioSap = usuarioPremecService.getUsuarioSAP(username);
 		
 		String fechaDesde = anio + StringUtils.leftPad(mes, 2, "0") + "01";
 		Calendar fecha = Calendar.getInstance();
@@ -221,7 +221,7 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 		fecha.add(Calendar.DAY_OF_MONTH, -1);
 		String fechaHasta = DateUtils.toString(fecha.getTime(), "yyyyMMdd");
 		
-		List<Usuario> usuarios = usuarioService.list();
+		List<UsuarioPremec> usuarios = usuarioPremecService.list();
 
 		StringBuilder sql = new StringBuilder();
 
@@ -393,13 +393,13 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 
 				String usuarioSap = preview.getUsuarioSap().toString();
 				
-				Optional<Usuario> usuario = usuarios.stream()
+				Optional<UsuarioPremec> usuario = usuarios.stream()
 						.filter(x -> x.getUsuariosap().equals(usuarioSap)).findFirst();
 				if (usuario.isPresent()) {
 					preview.setLegajo(usuario.get().getLegajo());
 				} else {
 					// Error
-					preview.setLegajo(-1);
+					preview.setLegajo(-1L);
 				}
 
 			}
@@ -419,7 +419,7 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 		
 		GrupoEmpleado grupoEmpleado = grupoEmpleadoService.get(idGrupoEmpleado);
 
-		return getIndicadoresByUsuarios(mes, anio, new ArrayList<Usuario>(grupoEmpleado.getUsuarios()));
+		return getIndicadoresByUsuarios(mes, anio, new ArrayList<UsuarioPremec>(grupoEmpleado.getUsuarios()));
 		
 	}
 	
@@ -433,7 +433,7 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 		        .map(Long::valueOf)
 		        .collect(Collectors.toList());
 		
-		List<Usuario> byIds = usuarioService.getByIds(listaIds);
+		List<UsuarioPremec> byIds = usuarioPremecService.getByIds(listaIds);
 		
 		return getIndicadoresByUsuarios(mes, anio, byIds);
 		
@@ -445,7 +445,7 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 		
 		GrupoEmpleado grupoEmpleado = grupoEmpleadoService.get(idGrupoEmpleado);
 		
-		return getIndicadoresByUsuariosAgrupado(mes, anio, new ArrayList<Usuario>(grupoEmpleado.getUsuarios()));
+		return getIndicadoresByUsuariosAgrupado(mes, anio, new ArrayList<UsuarioPremec>(grupoEmpleado.getUsuarios()));
 		
 	}
 	
@@ -459,18 +459,18 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 				.map(Long::valueOf)
 				.collect(Collectors.toList());
 		
-		List<Usuario> byIds = usuarioService.getByIds(listaIds);
+		List<UsuarioPremec> byIds = usuarioPremecService.getByIds(listaIds);
 		
 		return getIndicadoresByUsuariosAgrupado(mes, anio, byIds);
 		
 	}
 	
 	private List<RegistroInformeMensualEmpleadoIndividualDTO> getIndicadoresByUsuarios(String mes, String anio,
-			List<Usuario> users) {
+			List<UsuarioPremec> users) {
 		
-		List<Usuario> usuarios = usuarioService.list();
+		List<UsuarioPremec> usuarios = usuarioPremecService.list();
 
-		String idsUsuarioSap = users.stream().filter(x-> StringUtils.isNotBlank(x.getUsuariosap())).map((Usuario::getUsuariosap)).map(String::trim).collect(Collectors.joining(","));
+		String idsUsuarioSap = users.stream().filter(x-> StringUtils.isNotBlank(x.getUsuariosap())).map((UsuarioPremec::getUsuariosap)).map(String::trim).collect(Collectors.joining(","));
 		
 		String fechaDesde = anio + StringUtils.leftPad(mes, 2, "0") + "01";
 		Calendar fecha = Calendar.getInstance();
@@ -608,13 +608,13 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 
 				String usuarioSap = preview.getUsuarioSap().toString();
 
-				Optional<Usuario> usuario = usuarios.stream().filter(x -> x.getUsuariosap().equals(usuarioSap))
+				Optional<UsuarioPremec> usuario = usuarios.stream().filter(x -> x.getUsuariosap().equals(usuarioSap))
 						.findFirst();
 				if (usuario.isPresent()) {
 					preview.setLegajo(usuario.get().getLegajo());
 				} else {
 					// Error
-					preview.setLegajo(-1);
+					preview.setLegajo(-1L);
 				}
 				
 				list.add(preview);
@@ -632,9 +632,9 @@ public class IndicadorMensualServiceImpl implements IndicadorMensualService {
 	}
 
 	private RegistroInformeMensualEmpleadoIndividualDTO getIndicadoresByUsuariosAgrupado(String mes, String anio,
-			List<Usuario> users) {
+			List<UsuarioPremec> users) {
 		
-		String idsUsuarioSap = users.stream().filter(x-> StringUtils.isNotBlank(x.getUsuariosap())).map((Usuario::getUsuariosap)).map(String::trim).collect(Collectors.joining(","));
+		String idsUsuarioSap = users.stream().filter(x-> StringUtils.isNotBlank(x.getUsuariosap())).map((UsuarioPremec::getUsuariosap)).map(String::trim).collect(Collectors.joining(","));
 		
 		String fechaDesde = anio + StringUtils.leftPad(mes, 2, "0") + "01";
 		Calendar fecha = Calendar.getInstance();
