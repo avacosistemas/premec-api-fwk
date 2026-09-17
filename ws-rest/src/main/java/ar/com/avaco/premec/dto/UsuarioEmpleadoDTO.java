@@ -8,13 +8,16 @@ public class UsuarioEmpleadoDTO extends DTOEntity<Long> {
 
 	private String usuario;
 
+	private String idSap;
+
 	public UsuarioEmpleadoDTO() {
 		// TODO Auto-generated constructor stub
 	}
 
-	public UsuarioEmpleadoDTO(Long idUsr, String nombreApellidoUsername) {
+	public UsuarioEmpleadoDTO(Long idUsr, String nombreApellidoUsername, String idSap) {
 		this.id = idUsr;
 		this.usuario = nombreApellidoUsername;
+		this.idSap = idSap;
 	}
 
 	public Long getId() {
@@ -31,6 +34,14 @@ public class UsuarioEmpleadoDTO extends DTOEntity<Long> {
 
 	public void setUsuario(String usuario) {
 		this.usuario = usuario;
+	}
+
+	public String getIdSap() {
+		return idSap;
+	}
+
+	public void setIdSap(String idSap) {
+		this.idSap = idSap;
 	}
 
 }

@@ -29,7 +29,7 @@ public class GrupoEmpleadoEPServiceImpl
 	public List<UsuarioEmpleadoDTO> listUsuarios() {
 		List<UsuarioPremec> usrs = this.usuarioPremecService.list();
 		List<UsuarioEmpleadoDTO> usrdtolist = new ArrayList<UsuarioEmpleadoDTO>();
-		usrs.stream().forEach(x -> usrdtolist.add(new UsuarioEmpleadoDTO(x.getId(), x.getNombreApellido())));
+		usrs.stream().forEach(x -> usrdtolist.add(new UsuarioEmpleadoDTO(x.getId(), x.getNombreApellido(), x.getUsuariosap())));
 		usrdtolist.sort(new Comparator<UsuarioEmpleadoDTO>() {
 			@Override
 			public int compare(UsuarioEmpleadoDTO o1, UsuarioEmpleadoDTO o2) {
@@ -60,7 +60,7 @@ public class GrupoEmpleadoEPServiceImpl
 		dto.setId(entity.getId());
 		dto.setNombre(entity.getNombre());
 		entity.getUsuarios().stream()
-				.forEach(usr -> dto.getUsuarios().add(new UsuarioEmpleadoDTO(usr.getId(), usr.getNombreApellidoUsername())));
+				.forEach(usr -> dto.getUsuarios().add(new UsuarioEmpleadoDTO(usr.getId(), usr.getNombreApellidoUsername(), usr.getUsuariosap())));
 		return dto;
 	}
 

@@ -38,7 +38,6 @@ public class GrupoEmpleadoRestController
 	@Override
 	@RequestMapping(value = "/grupoEmpleado", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<JSONResponse> list() {
-		// TODO Auto-generated method stub
 		return super.list();
 	}
 

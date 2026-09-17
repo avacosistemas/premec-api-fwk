@@ -7,6 +7,9 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -31,11 +34,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import ar.com.avaco.fwk.commons.service.mail.MailSenderSMTPService;
+import ar.com.avaco.fwk.core.component.dto.PageDTO;
 import ar.com.avaco.fwk.core.exception.ErrorValidationException;
 import ar.com.avaco.fwk.core.utils.DateUtils;
 import ar.com.avaco.fwk.core.utils.NumberUtils;
 import ar.com.avaco.premec.service.UsuarioPremecService;
 import ar.com.avaco.premec.utils.BuscarTextoYStripper;
+import ar.com.avaco.premec.ws.dto.ReciboFilterDTO;
 import ar.com.avaco.premec.ws.dto.attachment.AttachmentLine;
 import ar.com.avaco.premec.ws.dto.attachment.ResponseAttachmentGetPost;
 import ar.com.avaco.premec.ws.dto.employee.EmployeesInfoReponseSapDTO;
@@ -68,6 +73,9 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 	@Value("${path.recibo.serversap}")
 	private String reciboPathServeSap;
 
+	@Autowired
+	private SQLServerConnection sqlcon;
+	
 	@Autowired
 	private MailSenderSMTPService sender;
 
@@ -507,6 +515,250 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 		return body;
 	}
 
+	@Override
+	public PageDTO<RegistroReciboPorUsuarioDTO> listarRecibos(ReciboFilterDTO filter) {
+
+		int total = 0;
+		
+	    StringBuilder sql = new StringBuilder();
+
+	    sql.append("SELECT ")
+	    	.append("COUNT(*) OVER() AS Total, ")
+	        .append("T0.AtcEntry AS AttachmentEntry, ")
+	        .append("T1.AbsEntry, ")
+	        .append("T0.UserID, ")
+	        .append("T0.FirstName + ' ' + T0.LastName AS Empleado, ")
+	        .append("YEAR(T0.DateFrom) AS [Year], ")
+	        .append("MONTH(T0.DateFrom) AS [Month], ")
+
+	        .append("CASE MONTH(T0.DateFrom) ")
+	        .append("WHEN 1 THEN 'enero' ")
+	        .append("WHEN 2 THEN 'febrero' ")
+	        .append("WHEN 3 THEN 'marzo' ")
+	        .append("WHEN 4 THEN 'abril' ")
+	        .append("WHEN 5 THEN 'mayo' ")
+	        .append("WHEN 6 THEN 'junio' ")
+	        .append("WHEN 7 THEN 'julio' ")
+	        .append("WHEN 8 THEN 'agosto' ")
+	        .append("WHEN 9 THEN 'septiembre' ")
+	        .append("WHEN 10 THEN 'octubre' ")
+	        .append("WHEN 11 THEN 'noviembre' ")
+	        .append("WHEN 12 THEN 'diciembre' ")
+	        .append("END AS MonthString, ")
+
+	        .append("T1.Line AS LineNum, ")
+
+	        // TIPO
+	        .append("CASE ")
+	        .append("WHEN CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) > 0 ")
+	        .append("THEN LEFT( ")
+	        .append("CAST(T1.[FreeText] AS nvarchar(max)), ")
+	        .append("CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) - 1 ")
+	        .append(") ")
+	        .append("ELSE CAST(T1.[FreeText] AS nvarchar(max)) ")
+	        .append("END AS Tipo, ")
+
+	        // DESCRIPCION
+	        .append("CASE ")
+	        .append("WHEN CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) > 0 ")
+	        .append("THEN SUBSTRING( ")
+	        .append("CAST(T1.[FreeText] AS nvarchar(max)), ")
+	        .append("CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) + 1, ")
+	        .append("LEN(CAST(T1.[FreeText] AS nvarchar(max))) ")
+	        .append(") ")
+	        .append("ELSE '' ")
+	        .append("END AS Descripcion, ")
+
+	        // FILE PATH
+	        .append("CAST(T1.trgtPath AS nvarchar(max)) ")
+	        .append("+ '\\' ")
+	        .append("+ CAST(T1.FileName AS nvarchar(max)) ")
+	        .append("+ '.' ")
+	        .append("+ CAST(T1.FileExt AS nvarchar(max)) AS FilePath, ")
+
+	        // FIRMADO
+	        .append("CASE ")
+	        .append("WHEN T1.EDocSign = 'Y' THEN CAST(1 AS bit) ")
+	        .append("ELSE CAST(0 AS bit) ")
+	        .append("END AS Firmado ")
+
+	        .append("FROM ATSH T0 ")
+	        .append("INNER JOIN ATC1 T1 ")
+	        .append("ON T1.AbsEntry = T0.AtcEntry ")
+
+	        .append("WHERE T0.AtcEntry IS NOT NULL ");
+
+	    List<Object> parametros = new ArrayList<>();
+
+	    // EMPLEADOS
+	    if (filter.getEmpleadosIds() != null
+	            && !filter.getEmpleadosIds().isEmpty()) {
+
+	        sql.append("AND T0.UserID IN (");
+
+	        for (int i = 0; i < filter.getEmpleadosIds().size(); i++) {
+
+	            if (i > 0) {
+	                sql.append(", ");
+	            }
+
+	            sql.append("?");
+	            parametros.add(filter.getEmpleadosIds().get(i));
+	        }
+
+	        sql.append(") ");
+	    }
+
+	    // AÑO
+	    if (filter.getAnio() != null) {
+
+	        sql.append("AND YEAR(T0.DateFrom) = ? ");
+	        parametros.add(filter.getAnio());
+	    }
+
+	    // MESES
+	    if (filter.getMeses() != null
+	            && !filter.getMeses().isEmpty()) {
+
+	        sql.append("AND MONTH(T0.DateFrom) IN (");
+
+	        for (int i = 0; i < filter.getMeses().size(); i++) {
+
+	            if (i > 0) {
+	                sql.append(", ");
+	            }
+
+	            sql.append("?");
+	            parametros.add(filter.getMeses().get(i));
+	        }
+
+	        sql.append(") ");
+	    }
+
+	    // FIRMADO
+	    if (filter.getFirmado() != null) {
+
+	        if (filter.getFirmado()) {
+	            sql.append("AND T1.EDocSign = 'Y' ");
+	        } else {
+	            sql.append("AND T1.EDocSign = 'N' ");
+	        }
+	    }
+
+	    // TIPO DE RECIBO
+	    if (StringUtils.isNotBlank(filter.getTipoRecibo())) {
+
+	        sql.append("AND CASE ")
+	            .append("WHEN CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) > 0 ")
+	            .append("THEN LEFT( ")
+	            .append("CAST(T1.[FreeText] AS nvarchar(max)), ")
+	            .append("CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) - 1 ")
+	            .append(") ")
+	            .append("ELSE CAST(T1.[FreeText] AS nvarchar(max)) ")
+	            .append("END = ? ");
+
+	        parametros.add(filter.getTipoRecibo());
+	    }
+
+	    // REFERENCIA
+	    if (StringUtils.isNotBlank(filter.getReferencia())) {
+
+	        sql.append("AND CASE ")
+	            .append("WHEN CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) > 0 ")
+	            .append("THEN SUBSTRING( ")
+	            .append("CAST(T1.[FreeText] AS nvarchar(max)), ")
+	            .append("CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) + 1, ")
+	            .append("LEN(CAST(T1.[FreeText] AS nvarchar(max))) ")
+	            .append(") ")
+	            .append("ELSE '' ")
+	            .append("END LIKE ? ");
+
+	        parametros.add("%" + filter.getReferencia() + "%");
+	    }
+
+	    // ORDEN Y PAGINACION
+	    sql.append("ORDER BY T0.DateFrom DESC, T0.UserID, T1.Line ");
+
+	    sql.append("OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
+
+	    int offset = filter.getPage() * filter.getPageSize();
+
+	    parametros.add(offset);
+	    parametros.add(filter.getPageSize());
+
+	    List<RegistroReciboPorUsuarioDTO> result = new ArrayList<>();
+
+	    try (
+	        Connection conn = sqlcon.getConnection();
+	        PreparedStatement stmt = conn.prepareStatement(sql.toString())
+	    ) {
+
+	        for (int i = 0; i < parametros.size(); i++) {
+	            stmt.setObject(i + 1, parametros.get(i));
+	        }
+
+	        try (ResultSet rs = stmt.executeQuery()) {
+
+	            while (rs.next()) {
+
+	                RegistroReciboPorUsuarioDTO dto =
+	                        new RegistroReciboPorUsuarioDTO();
+
+	                dto.setAttachmentEntry(
+	                        rs.getLong("AttachmentEntry"));
+
+	                dto.setAbsEntry(
+	                        rs.getLong("AbsEntry"));
+
+	                dto.setEmpleado(
+	                        rs.getString("Empleado"));
+
+	                dto.setYear(
+	                        rs.getInt("Year"));
+
+	                dto.setMonth(
+	                        rs.getInt("Month"));
+
+	                dto.setMonthString(
+	                        rs.getString("MonthString"));
+
+	                dto.setTipo(
+	                        rs.getString("Tipo"));
+
+	                dto.setDescripcion(
+	                        rs.getString("Descripcion"));
+
+	                dto.setFilePath(
+	                        rs.getString("FilePath"));
+
+	                dto.setFirmado(
+	                        rs.getBoolean("Firmado"));
+
+	                dto.setLineNum(
+	                        rs.getLong("LineNum"));
+	                
+	                total = rs.getInt("Total");
+
+	                result.add(dto);
+	            }
+	        }
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	    }
+
+	    PageDTO<RegistroReciboPorUsuarioDTO> page = new PageDTO<>();
+
+	    page.setList(result);
+	    page.setTotalReg(total);
+	    page.setPageSize(filter.getPageSize());
+	    page.setPage(filter.getPage());
+
+	    return page;
+	}
+
+
+	
 	@Override
 	public List<RegistroReciboPorUsuarioDTO> listarRecibosPorUsuario() {
 

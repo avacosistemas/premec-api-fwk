@@ -1,6 +1,8 @@
 package ar.com.avaco.premec.ws.dto.timesheet;
 
-public class RegistroReciboPorUsuarioDTO {
+import ar.com.avaco.fwk.core.component.dto.DTOEntity;
+
+public class RegistroReciboPorUsuarioDTO extends DTOEntity<Long> {
 
 	// Id del attachment
 	private Long attachmentEntry;
@@ -23,6 +25,16 @@ public class RegistroReciboPorUsuarioDTO {
 	private Boolean firmado;
 
 	private Long lineNum;
+
+	private String empleado;
+
+	public String getEmpleado() {
+		return empleado;
+	}
+
+	public void setEmpleado(String empleado) {
+		this.empleado = empleado;
+	}
 
 	public Long getLineNum() {
 		return lineNum;
@@ -104,4 +116,13 @@ public class RegistroReciboPorUsuarioDTO {
 		this.tipo = tipo;
 	}
 
+	@Override
+	public Long getId() {
+		return null;
+	}
+
+	@Override
+	public void setId(Long arg0) {
+	}
+	
 }

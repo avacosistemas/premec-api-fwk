@@ -21,8 +21,10 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import ar.com.avaco.fwk.core.component.dto.JSONResponse;
+import ar.com.avaco.fwk.core.component.dto.PageDTO;
 import ar.com.avaco.premec.utils.BuscarTextoYStripper;
 import ar.com.avaco.premec.ws.dto.ArchivoDTO;
+import ar.com.avaco.premec.ws.dto.ReciboFilterDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.ArchivoReciboDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.ReciboSueldoDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.RegistroReciboPorUsuarioDTO;
@@ -77,6 +79,16 @@ public class ReciboSueldoRestController {
 			response.setData(e);
 			e.printStackTrace();
 		}
+		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
+	}
+	
+	@RequestMapping(value = "/listarRecibos", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<JSONResponse> listarRecibos(ReciboFilterDTO reciboFilterDTO) {
+		JSONResponse response = new JSONResponse();
+		PageDTO<RegistroReciboPorUsuarioDTO> pageDTO = this.reciboService.listarRecibos(reciboFilterDTO);
+		response.setPage(pageDTO.toPageRepsponse());
+		response.setData(pageDTO.getList());
+		response.setStatus(JSONResponse.OK);
 		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
 	}
 
