@@ -582,7 +582,7 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 	        .append("ELSE CAST(0 AS bit) ")
 	        .append("END AS Firmado ")
 
-	        .append("FROM ATSH T0 ")
+	        .append("FROM OTSH T0 ")
 	        .append("INNER JOIN ATC1 T1 ")
 	        .append("ON T1.AbsEntry = T0.AtcEntry ")
 

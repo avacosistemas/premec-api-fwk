@@ -14,8 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import javax.annotation.Resource;
-
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 import org.apache.poi.ss.usermodel.Cell;
@@ -31,7 +29,6 @@ import org.springframework.stereotype.Service;
 
 import ar.com.avaco.fwk.core.exception.ErrorValidationException;
 import ar.com.avaco.fwk.core.utils.DateUtils;
-import ar.com.avaco.fwk.security.repository.UsuarioRepository;
 import ar.com.avaco.premec.domain.UsuarioPremec;
 import ar.com.avaco.premec.dto.EmpleadoFichados;
 import ar.com.avaco.premec.dto.EmpleadoSap;
@@ -528,7 +525,7 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 		String codigo = "";
 
 		if (StringUtils.isNotBlank(comentarios)) {
-			codigo = comentarios.split(" ")[0].replace("-", "");
+			codigo = comentarios.split("-")[0].trim();
 		}
 
 		timesheetline.setDate(DateUtils.toString(fechaFichado, "yyyy-MM-dd"));

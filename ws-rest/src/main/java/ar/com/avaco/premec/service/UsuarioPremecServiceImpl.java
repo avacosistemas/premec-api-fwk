@@ -101,5 +101,10 @@ public class UsuarioPremecServiceImpl extends NJBaseService<Long, UsuarioPremec,
 	public void setRepository(UsuarioPremecRepository repository) {
 		this.repository = repository;
 	}
+
+	@Override
+	public UsuarioPremec getByUsername(String username) {
+		return this.repository.findByUsername(username);
+	}
 	
 }

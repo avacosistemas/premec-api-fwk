@@ -59,6 +59,16 @@ public class RegistroInformeMensualEmpleadoDTO {
 
 	private String gratificacionesAumentos;
 
+	private String sueldoNeto;
+
+	public String getSueldoNeto() {
+		return sueldoNeto;
+	}
+
+	public void setSueldoNeto(String sueldoNeto) {
+		this.sueldoNeto = sueldoNeto;
+	}
+
 	public Long getLegajo() {
 		return legajo;
 	}

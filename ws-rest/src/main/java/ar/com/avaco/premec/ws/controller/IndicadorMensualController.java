@@ -1,6 +1,9 @@
 package ar.com.avaco.premec.ws.controller;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -17,6 +20,7 @@ import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoIndividualDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualGeneralDTO;
 import ar.com.avaco.premec.service.IndicadorMensualService;
+import ar.com.avaco.premec.ws.dto.actividad.ActivityValoracionSapDTO;
 
 @Controller
 public class IndicadorMensualController {
@@ -28,11 +32,28 @@ public class IndicadorMensualController {
 	public ResponseEntity<JSONResponse> indicadorMensual(@RequestParam String mes, @RequestParam String anio) {
 		JSONResponse response = new JSONResponse();
 		String username = SecurityContextHolder.getContext().getAuthentication().getName();
-		RegistroInformeMensualEmpleadoDTO preview = this.indicadorMensualService.getIndicadorMensualIndividual(mes, anio, username);
+		RegistroInformeMensualEmpleadoDTO preview = this.indicadorMensualService.getIndicadorMensualIndividual(mes,
+				anio, username);
 		response.setData(preview);
 		response.setStatus(JSONResponse.OK);
 		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
 	}
+
+	@RequestMapping(value = "/indicadorMensual/valoracionesNegativas", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<JSONResponse> indicadorMensualValoracionesNegativas(@RequestParam Integer mes,
+			@RequestParam Integer anio) {
+		JSONResponse response = new JSONResponse();
+		String username = SecurityContextHolder.getContext().getAuthentication().getName();
+		List<ActivityValoracionSapDTO> actividadesValoracion = this.indicadorMensualService
+				.getActividadesValoracion(username, mes, anio);
+		response.setData(actividadesValoracion);
+		response.setStatus(JSONResponse.OK);
+		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
+	}
+
+	///////////////////////////
+	// INDICADORES GENERALES //
+	///////////////////////////
 
 	@RequestMapping(value = "/indicadorMensualGeneral", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<JSONResponse> indicadorMensualGeneral(@RequestParam String mes, @RequestParam String anio) {
@@ -43,6 +64,17 @@ public class IndicadorMensualController {
 		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
 	}
 
+	@RequestMapping(value = "/indicadorMensualGeneral/valoracionesNegativas", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<JSONResponse> indicadorMensualGeneralValoracionesNegativas(@RequestParam Integer mes,
+			@RequestParam Integer anio) {
+		JSONResponse response = new JSONResponse();
+		List<ActivityValoracionSapDTO> actividadesValoracion = this.indicadorMensualService
+				.getActividadesValoracion(mes, anio);
+		response.setData(actividadesValoracion);
+		response.setStatus(JSONResponse.OK);
+		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
+	}
+	
 	@RequestMapping(value = "/indicadorMensualGrupoEmpleado", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<JSONResponse> indicadorMensualGrupoEmpleado(@RequestParam String mes,
 			@RequestParam String anio, @RequestParam Long idGrupoEmpleado, @RequestParam Boolean agrupado) {
@@ -58,17 +90,44 @@ public class IndicadorMensualController {
 		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
 	}
 
+	@RequestMapping(value = "/indicadorMensualGrupoEmpleado/valoracionesNegativas", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<JSONResponse> indicadorMensualGrupoEmpleado(@RequestParam Integer mes,
+			@RequestParam Integer anio, @RequestParam Long idGrupoEmpleado) {
+		JSONResponse response = new JSONResponse();
+		List<ActivityValoracionSapDTO> actividadesValoracion = this.indicadorMensualService
+				.getActividadesValoracionPorGrupoEmpleado(idGrupoEmpleado, mes, anio);
+		response.setData(actividadesValoracion);
+		response.setStatus(JSONResponse.OK);
+		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
+	}
+
 	@RequestMapping(value = "/indicadorMensualEmpleados", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<JSONResponse> indicadorMensualEmpleados(@RequestParam String mes, @RequestParam String anio,
 			String idsEmpleados, @RequestParam Boolean agrupado) {
 		JSONResponse response = new JSONResponse();
 		if (agrupado) {
-			RegistroInformeMensualEmpleadoIndividualDTO preview = this.indicadorMensualService.getIndicadoresEmpleadosAgrupado(mes, anio, idsEmpleados);
+			RegistroInformeMensualEmpleadoIndividualDTO preview = this.indicadorMensualService
+					.getIndicadoresEmpleadosAgrupado(mes, anio, idsEmpleados);
 			response.setData(preview);
 		} else {
-			List<RegistroInformeMensualEmpleadoIndividualDTO> preview = this.indicadorMensualService.getIndicadoresEmpleados(mes, anio, idsEmpleados);
+			List<RegistroInformeMensualEmpleadoIndividualDTO> preview = this.indicadorMensualService
+					.getIndicadoresEmpleados(mes, anio, idsEmpleados);
 			response.setData(preview);
 		}
+		response.setStatus(JSONResponse.OK);
+		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
+	}
+
+	@RequestMapping(value = "/indicadorMensualEmpleados/valoracionesNegativas", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<JSONResponse> indicadorMensualEmpleadosValoracionesNegativas(@RequestParam Integer mes,
+			@RequestParam Integer anio, String idsEmpleados) {
+		JSONResponse response = new JSONResponse();
+		List<Long> lista = idsEmpleados == null || idsEmpleados.trim().isEmpty() ? new ArrayList<>()
+				: Arrays.stream(idsEmpleados.split(",")).map(String::trim).map(Long::valueOf)
+						.collect(Collectors.toList());
+		List<ActivityValoracionSapDTO> actividadesValoracion = this.indicadorMensualService
+				.getActividadesValoracionPorEmpleados(lista, mes, anio);
+		response.setData(actividadesValoracion);
 		response.setStatus(JSONResponse.OK);
 		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
 	}

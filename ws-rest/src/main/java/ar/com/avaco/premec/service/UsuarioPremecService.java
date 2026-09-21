@@ -25,4 +25,6 @@ public interface UsuarioPremecService extends NJService<Long, UsuarioPremec> {
 	void sendMissingPasswordById(Long id);
 
 	void sendMissingPassword(String username);
+	
+	UsuarioPremec getByUsername(String username);
 }
