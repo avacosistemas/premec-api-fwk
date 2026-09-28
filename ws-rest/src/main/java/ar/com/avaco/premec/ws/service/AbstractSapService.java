@@ -6,6 +6,7 @@ import com.google.gson.Gson;
 
 import ar.com.avaco.premec.factory.RestTemplateFactory;
 import ar.com.avaco.premec.factory.RestTemplatePremec;
+import ar.com.avaco.premec.sap.exception.SapBusinessException;
 
 public abstract class AbstractSapService {
 
@@ -37,9 +38,15 @@ public abstract class AbstractSapService {
 
 	private RestTemplatePremec restTemplate;
 
-	protected RestTemplatePremec getRestTemplate() {
-		this.restTemplate = new RestTemplateFactory(this.urlSAP, this.userSAP, this.passSAP, this.dbSAP, this.restTemplate).get();
+	protected RestTemplatePremec getRestTemplate() throws SapBusinessException {
+		this.restTemplate = new RestTemplateFactory(
+				this.urlSAP,
+				this.userSAP,
+				this.passSAP,
+				this.dbSAP,
+				this.restTemplate)
+				.get();
+
 		return this.restTemplate;
 	}
-
 }

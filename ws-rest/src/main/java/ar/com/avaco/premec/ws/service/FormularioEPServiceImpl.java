@@ -12,9 +12,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -373,10 +373,12 @@ public class FormularioEPServiceImpl extends AbstractSapService implements Formu
 			Date fechaAnterior = DateUtils.toDate(fechaAnteriorActividadContrato, "yyyy-MM-dd");
 			Date fechaActual = DateUtils.getFechaYHoraActual();
 
-			LocalDateTime date1 = LocalDateTime.ofInstant(fechaActual.toInstant(), ZoneId.systemDefault());
-			LocalDateTime date2 = LocalDateTime.ofInstant(fechaAnterior.toInstant(), ZoneId.systemDefault());
+			
+			LocalDate date1 = fechaActual.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+			LocalDate date2 = fechaAnterior.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
 
-			double diasDouble = Math.abs(Duration.between(date1, date2).toDays());
+			double diasDouble = Math.abs(ChronoUnit.DAYS.between(date1, date2)) + 1;
+			
 			double horasDouble = horasMaquina - hsMaqAnterior;
 
 			if (horasDouble < 0) {

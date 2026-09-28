@@ -8,9 +8,7 @@ import java.sql.ResultSet;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -18,23 +16,20 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import com.google.common.collect.Lists;
 import com.ibm.icu.util.Calendar;
 
-import ar.com.avaco.fwk.core.exception.ErrorValidationException;
 import ar.com.avaco.fwk.core.utils.DateUtils;
 import ar.com.avaco.premec.domain.GrupoEmpleado;
 import ar.com.avaco.premec.domain.UsuarioPremec;
 import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoIndividualDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualGeneralDTO;
-import ar.com.avaco.premec.sap.exception.SapBusinessException;
-import ar.com.avaco.premec.ws.dto.actividad.ActivitiesValoracionResponseSapDTO;
 import ar.com.avaco.premec.ws.dto.actividad.ActivityValoracionSapDTO;
+import ar.com.avaco.premec.ws.dto.businesspartner.BusinessPartnerSapDTO;
+import ar.com.avaco.premec.ws.dto.employee.EmployeesInfoReponseSapDTO;
 import ar.com.avaco.premec.ws.service.AbstractSapService;
 import ar.com.avaco.premec.ws.service.SQLServerConnection;
 
@@ -76,57 +71,83 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 	}
 
 	@Override
-	public List<ActivityValoracionSapDTO> getActividadesValoracionPorEmpleados(List<Long> idsEmpleados, Integer mes,
-			Integer anio) {
+	public List<ActivityValoracionSapDTO> getActividadesValoracionPorEmpleados(
+			List<Long> idsEmpleados, Integer mes, Integer anio) {
 
 		List<UsuarioPremec> byIds = usuarioPremecService.getByIds(idsEmpleados);
-		List<String> idsUsuariosSap = byIds.stream().map(UsuarioPremec::getUsuariosap).collect(Collectors.toList());
-		
+
+		List<String> idsUsuariosSap = byIds.stream()
+				.filter(x -> StringUtils.isNotBlank(x.getUsuariosap()))
+				.map(UsuarioPremec::getUsuariosap)
+				.map(String::trim)
+				.collect(Collectors.toList());
+
 		LocalDate fechaDesde = LocalDate.of(anio, mes, 1);
 		LocalDate fechaHasta = fechaDesde.plusMonths(1);
 
-		String startDate = fechaDesde + "T00:00:00";
-		String endDate = fechaHasta + "T00:00:00";
+		String fechaDesdeSql = fechaDesde.toString().replace("-", "");
+		String fechaHastaSql = fechaHasta.toString().replace("-", "");
 
-		String filtro = "U_Valoracion eq 'M'" + " and StartDate ge '" + startDate + "'" + " and StartDate lt '"
-				+ endDate + "'";
+		StringBuilder sql = new StringBuilder();
+
+		sql.append(" SELECT ")
+				.append(" O.Details AS details, ")
+				.append(" O.ClgCode AS activityCode, ")
+				.append(" O.recontact AS startDate, ")
+				.append(" O.U_detallevaloracion AS detalleValoracion, ")
+				.append(" BP.CardName AS cardName, ")
+				.append(" E.firstName AS firstName, ")
+				.append(" E.lastName AS lastName ")
+				.append(" FROM OCLG O ")
+				.append(" LEFT JOIN OCRD BP ON BP.CardCode = O.CardCode ")
+				.append(" LEFT JOIN OHEM E ON E.empID = O.AttendEmpl ")
+				.append(" WHERE O.U_Valoracion = 'M' ")
+				.append(" AND O.recontact >= '{fechaDesde}' ")
+				.append(" AND O.recontact < '{fechaHasta}' ");
 
 		if (idsUsuariosSap != null && !idsUsuariosSap.isEmpty()) {
-
-			String filtroEmpleados = idsUsuariosSap.stream().map(id -> "HandledByEmployee eq " + id)
-					.collect(Collectors.joining(" or "));
-
-			filtro += " and (" + filtroEmpleados + ")";
+			sql.append(" AND O.AttendEmpl IN ({idUsuarioSap}) ");
 		}
 
-		String url = urlSAP + "/Activities"
-				+ "?$select=Details,ActivityCode,StartDate,U_detallevaloracion,HandledByEmployee"
-				+ "&$expand=BusinessPartner($select=CardName),EmployeeInfo($select=FirstName,LastName)" + "&$filter="
-				+ filtro;
+		sql.append(" ORDER BY O.CntctDate, O.ClgCode ");
 
-		ResponseEntity<ActivitiesValoracionResponseSapDTO> activities = null;
+		String sqlString = sql.toString()
+				.replace("{fechaDesde}", fechaDesdeSql)
+				.replace("{fechaHasta}", fechaHastaSql)
+				.replace("{idUsuarioSap}", String.join(",", idsUsuariosSap));
 
-		try {
-			activities = getRestTemplate().doExchange(url, HttpMethod.GET, null,
-					ActivitiesValoracionResponseSapDTO.class);
-		} catch (SapBusinessException e) {
-			String fullStackTrace = SapBusinessException.generarStackTraceString(e);
+		List<ActivityValoracionSapDTO> list = new ArrayList<ActivityValoracionSapDTO>();
 
-			Map<String, String> errors = new HashMap<String, String>();
-			errors.put("url", url);
-			errors.put("error", fullStackTrace);
+		try (Connection conn = sqlcon.getConnection();
+				PreparedStatement stmt = conn.prepareStatement(sqlString);
+				ResultSet rs = stmt.executeQuery()) {
 
+			while (rs.next()) {
+
+				ActivityValoracionSapDTO activity = new ActivityValoracionSapDTO();
+
+				activity.setDetails(rs.getString("details"));
+				activity.setActivityCode(rs.getLong("activityCode"));
+				activity.setStartDate(rs.getString("startDate"));
+				activity.setDetalleValoracion(rs.getString("detalleValoracion"));
+
+				BusinessPartnerSapDTO businessPartner = new BusinessPartnerSapDTO();
+				businessPartner.setCardName(rs.getString("cardName"));
+				activity.setBusinessPartner(businessPartner);
+
+				EmployeesInfoReponseSapDTO employeeInfo = new EmployeesInfoReponseSapDTO();
+				employeeInfo.setFirstName(rs.getString("firstName"));
+				employeeInfo.setLastName(rs.getString("lastName"));
+				activity.setEmployeeInfo(employeeInfo);
+
+				list.add(activity);
+			}
+
+		} catch (Exception e) {
 			e.printStackTrace();
-
-			throw new ErrorValidationException("Error al ejecutar el siguiente WS", errors);
 		}
 
-		List<ActivityValoracionSapDTO> act = new ArrayList<ActivityValoracionSapDTO>();
-		
-		if (activities != null)
-			act.addAll(activities.getBody().getValue());
-		
-		return act;
+		return list;
 	}
 
 	/**
@@ -228,7 +249,7 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 
 	        .append("         ISNULL(SUM(CASE ")
 	        .append("             WHEN det.u_tipoausentismo IS NULL ")
-	        .append("                  OR det.u_tipoausentismo = '' ")
+	        .append("                  OR CAST(det.u_tipoausentismo AS NVARCHAR(MAX)) = '' ")
 	        .append("             THEN det.EffectHr ")
 	        .append("             ELSE 0 ")
 	        .append("         END), 0) AS fichado ")
@@ -284,7 +305,8 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 
 	        .append("     FROM OCLG ")
 
-	        .append("     WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ");
+	        .append("     WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ")
+	        .append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ");
 
 	    List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
 
@@ -380,326 +402,6 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 	    return preview;
 	}
 	
-	/**
-	 * Indicador general mensual agrupado por todos los empleados para un periodo en
-	 * particular.
-	 */
-//	@Override
-//	public RegistroInformeMensualGeneralDTO getIndicadorMensualGeneral(String mes, String anio) {
-//
-//		String fechaDesde = anio + StringUtils.leftPad(mes, 2, "0") + "01";
-//
-//		Calendar fecha = Calendar.getInstance();
-//		fecha.setTime(DateUtils.toDate(fechaDesde, "yyyyMMdd"));
-//		fecha.add(Calendar.MONTH, 1);
-//		fecha.add(Calendar.DAY_OF_MONTH, -1);
-//		String fechaHasta = DateUtils.toString(fecha.getTime(), "yyyyMMdd");
-//
-//		StringBuilder sql = new StringBuilder();
-//
-//		sql.append(" SELECT ").append("     SUM(det.BillableHr) AS facturables, ")
-//				.append("     dbo.fnFormatHoras(SUM(det.BillableHr)) AS facturablesHora, ").append("     ( ")
-//				.append("         SUM(CASE ")
-//				.append("             WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//				.append("             THEN det.EffectHr ELSE 0 ").append("         END) ")
-//				.append("         - SUM(det.BillableHr) ").append("     ) AS ociosas, ")
-//				.append("     dbo.fnFormatHoras( ").append("         ( ").append("             SUM(CASE ")
-//				.append("                 WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//				.append("                 THEN det.EffectHr ELSE 0 ").append("             END) ")
-//				.append("             - SUM(det.BillableHr) ").append("         ) ").append("     ) AS ociosasHora, ")
-//				.append("     SUM(CASE ")
-//				.append("         WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//				.append("         THEN det.EffectHr ELSE 0 ").append("     END) AS fichado, ")
-//				.append("     dbo.fnFormatHoras(SUM(CASE ")
-//				.append("         WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//				.append("         THEN det.EffectHr ELSE 0 ").append("     END)) AS fichadoHora, ")
-//				.append("     CAST( ").append("         CAST( ").append("             (SUM(det.BillableHr) * 100.0) / ")
-//				.append("             NULLIF( ").append("                 SUM(CASE ")
-//				.append("                     WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//				.append("                     THEN det.EffectHr ELSE 0 ").append("                 END), ")
-//				.append("             0 ").append("         ) AS DECIMAL(10,2) ")
-//				.append("     ) AS VARCHAR(10)) + '%' AS efectividad, ")
-//				.append("     SUM(ISNULL(O.cantMB, 0)) AS cantMB, ").append("     SUM(ISNULL(O.cantB, 0)) AS cantB, ")
-//				.append("     SUM(ISNULL(O.cantR, 0)) AS cantR, ").append("     SUM(ISNULL(O.cantM, 0)) AS cantM, ")
-//				.append("     SUM(ISNULL(O.cantSV, 0)) AS cantSV, ")
-//				.append("     SUM(ISNULL(O.cantidadActividades, 0)) AS cantidadActividades, ").append("     FORMAT( ")
-//				.append("         CAST( ").append("             NULLIF( ")
-//				.append("                 SUM(ISNULL(O.cantMB,0)) + SUM(ISNULL(O.cantB,0)), ")
-//				.append("                 0 ").append("             ) AS DECIMAL(10,2) ").append("         ) / ")
-//				.append("         CAST( ").append("             (SUM(ISNULL(O.cantMB,0)) * 1) + ")
-//				.append("             (SUM(ISNULL(O.cantB,0)) * 1) + ")
-//				.append("             (SUM(ISNULL(O.cantR,0)) * 5) + ")
-//				.append("             (SUM(ISNULL(O.cantM,0)) * 15) ").append("         AS DECIMAL(10,2)), ")
-//				.append("     'P2') AS porcentajeValoracion ").append(" FROM OTSH cab ")
-//				.append(" LEFT JOIN TSH1 det ON cab.AbsEntry = det.AbsEntry ")
-//				.append(" INNER JOIN OHEM E ON cab.UserID = E.empID ").append(" LEFT JOIN ( ").append("     SELECT ")
-//				.append("         AttendEmpl, ").append("         COUNT(*) AS cantidadActividades, ")
-//				.append("         SUM(CASE WHEN U_Valoracion = 'MB' THEN 1 ELSE 0 END) AS cantMB, ")
-//				.append("         SUM(CASE WHEN U_Valoracion = 'B' THEN 1 ELSE 0 END) AS cantB, ")
-//				.append("         SUM(CASE WHEN U_Valoracion = 'R' THEN 1 ELSE 0 END) AS cantR, ")
-//				.append("         SUM(CASE WHEN U_Valoracion = 'M' THEN 1 ELSE 0 END) AS cantM, ")
-//				.append("         SUM(CASE WHEN U_Valoracion IS NULL THEN 1 ELSE 0 END) AS cantSV ")
-//				.append("     FROM OCLG ").append("     WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ");
-//
-//		List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
-//		for (String exclusion : exclusionesList) {
-//			sql.append(" and Details not like '%{exclusion}%' ".replace("{exclusion}", exclusion));
-//		}
-//
-//		sql.append("     GROUP BY AttendEmpl ").append(" ) O ON O.AttendEmpl = E.empID ")
-//				.append(" WHERE cab.DateFrom = '{fechaDesde}' ");
-//
-//		String sqlString = sql.toString().replace("{fechaDesde}", fechaDesde).replace("{fechaHasta}", fechaHasta);
-//
-//		RegistroInformeMensualGeneralDTO preview = null;
-//
-//		try (Connection conn = sqlcon.getConnection();
-//				PreparedStatement stmt = conn.prepareStatement(sqlString);
-//				ResultSet rs = stmt.executeQuery()) {
-//
-//			if (rs.next()) {
-//				preview = new RegistroInformeMensualGeneralDTO();
-//
-//				BigDecimal facturables = rs.getBigDecimal("facturables");
-//				preview.setFacturables(facturables != null ? facturables.toString() : "");
-//				preview.setFacturablesHora(rs.getString("facturablesHora"));
-//
-//				BigDecimal ociosas = rs.getBigDecimal("ociosas");
-//				preview.setOciosas(ociosas != null ? ociosas.toString() : "");
-//				preview.setOciosasHora(rs.getString("ociosasHora"));
-//
-//				BigDecimal fichado = rs.getBigDecimal("fichado");
-//				preview.setFichado(fichado != null ? fichado.toString() : "");
-//				preview.setFichadoHora(rs.getString("fichadoHora"));
-//
-//				preview.setEfectividad(rs.getString("efectividad"));
-//
-//				preview.setCantMB(rs.getInt("cantMB"));
-//				preview.setCantB(rs.getInt("cantB"));
-//				preview.setCantR(rs.getInt("cantR"));
-//				preview.setCantM(rs.getInt("cantM"));
-//				preview.setCantSV(rs.getInt("cantSV"));
-//
-//				preview.setCantidadActividades(rs.getInt("cantidadActividades"));
-//				preview.setPorcentajeValoracion(rs.getString("porcentajeValoracion"));
-//
-//			}
-//
-//			sqlcon.getConnection().close();
-//
-//		} catch (Exception e) {
-//			e.printStackTrace();
-//		}
-//
-//		return preview;
-//	}
-
-//	@Override
-//	public RegistroInformeMensualEmpleadoDTO getIndicadorMensualIndividual(String mes, String anio, String username) {
-//
-//	    String idUsuarioSap = usuarioPremecService.getUsuarioSAP(username);
-//
-//	    String fechaDesde = anio + StringUtils.leftPad(mes, 2, "0") + "01";
-//
-//	    Calendar fecha = Calendar.getInstance();
-//	    fecha.setTime(DateUtils.toDate(fechaDesde, "yyyyMMdd"));
-//	    fecha.add(Calendar.MONTH, 1);
-//	    fecha.add(Calendar.DAY_OF_MONTH, -1);
-//	    String fechaHasta = DateUtils.toString(fecha.getTime(), "yyyyMMdd");
-//
-//	    List<UsuarioPremec> usuarios = usuarioPremecService.list();
-//	    StringBuilder sql = new StringBuilder();
-//
-//	    sql.append(" SELECT ")
-//	        .append("     max(cab.UserID) AS usuarioSap, ")
-//	        .append("     max(E.firstName + ' ' + E.lastName) AS nombre, ")
-//	        .append("     SUM(det.BillableHr) AS facturables, ")
-//	        .append("     dbo.fnFormatHoras(SUM(det.BillableHr)) AS facturablesHora, ")
-//	        .append("     ( ")
-//	        .append("         SUM(CASE ")
-//	        .append("             WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//	        .append("             THEN det.EffectHr ELSE 0 ")
-//	        .append("         END) ")
-//	        .append("         - SUM(det.BillableHr) ")
-//	        .append("     ) AS ociosas, ")
-//	        .append("     dbo.fnFormatHoras( ")
-//	        .append("         ( ")
-//	        .append("             SUM(CASE ")
-//	        .append("                 WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//	        .append("                 THEN det.EffectHr ELSE 0 ")
-//	        .append("             END) ")
-//	        .append("             - SUM(det.BillableHr) ")
-//	        .append("         ) ")
-//	        .append("     ) AS ociosasHora, ")
-//	        .append("     SUM(CASE ")
-//	        .append("         WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//	        .append("         THEN det.EffectHr ELSE 0 ")
-//	        .append("     END) AS fichado, ")
-//	        .append("     dbo.fnFormatHoras(SUM(CASE ")
-//	        .append("         WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//	        .append("         THEN det.EffectHr ELSE 0 ")
-//	        .append("     END)) AS fichadoHora, ")
-//	        .append("     CAST( ")
-//	        .append("         CAST( ")
-//	        .append("             (SUM(det.BillableHr) * 100.0) / ")
-//	        .append("             NULLIF( ")
-//	        .append("                 SUM(CASE ")
-//	        .append("                     WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ")
-//	        .append("                     THEN det.EffectHr ELSE 0 ")
-//	        .append("                 END), ")
-//	        .append("             0 ")
-//	        .append("         ) AS DECIMAL(10,2) ")
-//	        .append("     ) AS VARCHAR(10) ")
-//	        .append("     ) + '%' AS efectividad, ")
-//	        .append("     MAX(ISNULL(O.cantMB, 0)) AS cantMB, ")
-//	        .append("     MAX(ISNULL(O.cantB, 0)) AS cantB, ")
-//	        .append("     MAX(ISNULL(O.cantR, 0)) AS cantR, ")
-//	        .append("     MAX(ISNULL(O.cantM, 0)) AS cantM, ")
-//	        .append("     MAX(ISNULL(O.cantSV, 0)) AS cantSV, ")
-//	        .append("     MAX(ISNULL(O.cantidadActividades, 0)) AS cantidadActividades, ")
-//	        .append("     FORMAT( ")
-//	        .append("         CAST( ")
-//	        .append("             NULLIF( ")
-//	        .append("                 SUM(ISNULL(O.cantMB,0)) + SUM(ISNULL(O.cantB,0)), ")
-//	        .append("                 0 ")
-//	        .append("             ) AS DECIMAL(10,2) ")
-//	        .append("         ) / ")
-//	        .append("         CAST( ")
-//	        .append("             (SUM(ISNULL(O.cantMB,0)) * 1) + ")
-//	        .append("             (SUM(ISNULL(O.cantB,0)) * 1) + ")
-//	        .append("             (SUM(ISNULL(O.cantR,0)) * 5) + ")
-//	        .append("             (SUM(ISNULL(O.cantM,0)) * 15) ")
-//	        .append("         AS DECIMAL(10,2)), ")
-//	        .append("     'P2' ")
-//	        .append("     ) AS porcentajeValoracion, ")
-//
-//	        // DATOS ADICIONALES
-//	        .append("     MAX(E.U_Objetivo) AS objetivoActividades, ")
-//	        .append("     MAX(ISNULL(cab.U_cumplimientoobjetivo,'')) AS cumplimientoObjetivo, ")
-//	        .append("     MAX(ISNULL(cab.U_salario,0)) AS salario, ")
-//	        .append("     MAX(ISNULL(E.salaryunit,'')) AS unidadSalario, ")
-//	        .append("     MAX(cab.u_viaticos) AS viaticos, ")
-//	        .append("     MAX(cab.U_adelanto) AS adelanto, ")
-//	        .append("     MAX(cab.U_prestamo) AS prestamo, ")
-//	        .append("     MAX(cab.u_aumento) AS aumento, ")
-//	        .append("     MAX(cab.u_premio) AS premio, ")
-//	        .append("     MAX(ISNULL(cab.U_sueldoneto,0)) AS sueldoNeto ")
-//
-//	        .append(" FROM OTSH cab ")
-//
-//	        .append(" LEFT JOIN TSH1 det ")
-//	        .append("     ON cab.AbsEntry = det.AbsEntry ")
-//
-//	        .append(" LEFT JOIN OHEM E ")
-//	        .append("     ON cab.UserID = E.empID ")
-//
-//	        .append(" LEFT JOIN ( ")
-//	        .append("     SELECT ")
-//	        .append("         AttendEmpl, ")
-//	        .append("         COUNT(*) AS cantidadActividades, ")
-//	        .append("         SUM(CASE WHEN U_Valoracion = 'MB' THEN 1 ELSE 0 END) AS cantMB, ")
-//	        .append("         SUM(CASE WHEN U_Valoracion = 'B' THEN 1 ELSE 0 END) AS cantB, ")
-//	        .append("         SUM(CASE WHEN U_Valoracion = 'R' THEN 1 ELSE 0 END) AS cantR, ")
-//	        .append("         SUM(CASE WHEN U_Valoracion = 'M' THEN 1 ELSE 0 END) AS cantM, ")
-//	        .append("         SUM(CASE WHEN U_Valoracion IS NULL THEN 1 ELSE 0 END) AS cantSV ")
-//	        .append("     FROM OCLG ")
-//	        .append("     WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ");
-//
-//	    List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
-//
-//	    for (String exclusion : exclusionesList) {
-//	        sql.append(" and Details not like '%{exclusion}%' "
-//	                .replace("{exclusion}", exclusion));
-//	    }
-//
-//	    sql.append("     GROUP BY AttendEmpl ")
-//	        .append(" ) O ")
-//	        .append("     ON O.AttendEmpl = E.empID ")
-//
-//	        .append(" WHERE cab.DateFrom = '{fechaDesde}' ")
-//	        .append("   AND E.empID = {idUsuarioSap} ");
-//
-//	    String sqlString = sql.toString()
-//	        .replace("{fechaDesde}", fechaDesde)
-//	        .replace("{fechaHasta}", fechaHasta)
-//	        .replace("{idUsuarioSap}", idUsuarioSap);
-//
-//	    RegistroInformeMensualEmpleadoDTO preview = null;
-//
-//	    try (Connection conn = sqlcon.getConnection();
-//	         PreparedStatement stmt = conn.prepareStatement(sqlString);
-//	         ResultSet rs = stmt.executeQuery()) {
-//
-//	        if (rs.next()) {
-//	            preview = new RegistroInformeMensualEmpleadoDTO();
-//
-//	            preview.setUsuarioSap(rs.getLong("usuarioSap"));
-//	            preview.setNombre(rs.getString("nombre"));
-//
-//	            BigDecimal facturables = rs.getBigDecimal("facturables");
-//	            preview.setFacturables(facturables != null ? facturables.toString() : "");
-//	            preview.setFacturablesHora(rs.getString("facturablesHora"));
-//
-//	            BigDecimal ociosas = rs.getBigDecimal("ociosas");
-//	            preview.setOciosas(ociosas != null ? ociosas.toString() : "");
-//	            preview.setOciosasHora(rs.getString("ociosasHora"));
-//
-//	            BigDecimal fichado = rs.getBigDecimal("fichado");
-//	            preview.setFichado(fichado != null ? fichado.toString() : "");
-//	            preview.setFichadoHora(rs.getString("fichadoHora"));
-//
-//	            preview.setEfectividad(rs.getString("efectividad"));
-//
-//	            preview.setCantMB(rs.getInt("cantMB"));
-//	            preview.setCantB(rs.getInt("cantB"));
-//	            preview.setCantR(rs.getInt("cantR"));
-//	            preview.setCantM(rs.getInt("cantM"));
-//	            preview.setCantSV(rs.getInt("cantSV"));
-//
-//	            preview.setViaticos(rs.getString("viaticos"));
-//	            preview.setAdelanto(rs.getString("adelanto"));
-//	            preview.setPrestamo(rs.getString("prestamo"));
-//	            preview.setGratificacionesAumentos(rs.getString("aumento"));
-//	            preview.setPremioAsistencia(rs.getString("premio"));
-//
-//	            preview.setCantidadActividades(rs.getInt("cantidadActividades"));
-//	            preview.setPorcentajeValoracion(rs.getString("porcentajeValoracion"));
-//
-//	            preview.setObjetivoActividades(rs.getInt("objetivoActividades"));
-//	            preview.setCumplimientoObjetivo(rs.getString("cumplimientoObjetivo"));
-//
-//	            BigDecimal salariobd = rs.getBigDecimal("salario");
-//	            preview.setSalario(salariobd != null ? salariobd.toString() : "");
-//
-//	            preview.setUnidadSalario(rs.getString("unidadSalario"));
-//
-//	            BigDecimal sueldoNeto = rs.getBigDecimal("sueldoNeto");
-//
-//	            preview.setSueldoNeto(
-//	                sueldoNeto != null
-//	                    ? sueldoNeto.setScale(2, RoundingMode.HALF_UP).toString()
-//	                    : ""
-//	            );
-//
-//	            String usuarioSap = preview.getUsuarioSap().toString();
-//
-//	            Optional<UsuarioPremec> usuario = usuarios.stream()
-//	                .filter(x -> x.getUsuariosap().equals(usuarioSap))
-//	                .findFirst();
-//
-//	            if (usuario.isPresent()) {
-//	                preview.setLegajo(usuario.get().getLegajo());
-//	            } else {
-//	                preview.setLegajo(-1L);
-//	            }
-//	        }
-//
-//	    } catch (Exception e) {
-//	        e.printStackTrace();
-//	    }
-//
-//	    return preview;
-//	}
 
 	@Override
 	public RegistroInformeMensualEmpleadoDTO getIndicadorMensualIndividual(String mes, String anio, String username) {
@@ -837,7 +539,8 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 	        .append("         SUM(CASE WHEN U_Valoracion = 'M' THEN 1 ELSE 0 END) AS cantM, ")
 	        .append("         SUM(CASE WHEN U_Valoracion IS NULL THEN 1 ELSE 0 END) AS cantSV ")
 	        .append("     FROM OCLG ")
-	        .append("     WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ");
+	        .append("     WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ")
+	        .append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ");
 
 	    List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
 
@@ -1071,7 +774,8 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 				.append("          SUM(CASE WHEN U_Valoracion = 'M' THEN 1 ELSE 0 END) AS cantM, ")
 				.append("          SUM(CASE WHEN U_Valoracion IS NULL THEN 1 ELSE 0 END) AS cantSV ")
 				.append("   FROM OCLG ")
-				.append("   WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ");
+				.append("   WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ")
+				.append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ");
 
 		List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
 		for (String exclusion : exclusionesList) {
@@ -1170,17 +874,22 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 		sql.append("        SUM(det.BillableHr) AS facturables, ");
 
 		sql.append("     ( ");
+		
 		sql.append("         SUM(CASE ");
-		sql.append("             WHEN det.u_tipoausentismo IS NULL OR det.u_tipoausentismo = '' ");
+		sql.append("             WHEN det.u_tipoausentismo IS NULL ");
+		sql.append("                  OR CAST(det.u_tipoausentismo AS NVARCHAR(MAX)) = '' ");
 		sql.append("             THEN det.EffectHr ELSE 0 ");
 		sql.append("         END) ");
+		
 		sql.append("         - SUM(det.BillableHr) ");
+		
 		sql.append("     ) AS ociosas, ");
 
 		sql.append("        SUM(CASE ");
 		sql.append("            WHEN det.u_tipoausentismo IS NULL ");
-		sql.append("              OR det.u_tipoausentismo = '' ");
+		sql.append("              OR CAST(det.u_tipoausentismo AS NVARCHAR(MAX)) = '' ");
 		sql.append("            THEN det.EffectHr ELSE 0 END) AS fichado, ");
+		
 		sql.append("        ISNULL(O.cantMB, 0) AS cantMB, ");
 		sql.append("        ISNULL(O.cantB, 0) AS cantB, ");
 		sql.append("        ISNULL(O.cantR, 0) AS cantR, ");
@@ -1201,6 +910,7 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 		sql.append("            SUM(CASE WHEN U_Valoracion IS NULL THEN 1 ELSE 0 END) AS cantSV ");
 		sql.append("        FROM OCLG ");
 		sql.append("        WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ");
+		sql.append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ");
 
 		List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
 		for (String exclusion : exclusionesList) {

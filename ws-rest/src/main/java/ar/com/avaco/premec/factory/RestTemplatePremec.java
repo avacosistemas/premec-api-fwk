@@ -2,10 +2,10 @@ package ar.com.avaco.premec.factory;
 
 import java.util.Calendar;
 import java.util.Date;
+import java.util.function.Function;
 
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -21,197 +21,146 @@ import ar.com.avaco.premec.sap.exception.SapBusinessException;
 
 public class RestTemplatePremec extends RestTemplate {
 
+	private static final int MAX_RETRIES = 3;
+
 	private Date expiration;
-	private HttpHeaders defaultHeaders;
+
+	private RestTemplateFactory restTemplateFactory;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	public RestTemplatePremec(HttpComponentsClientHttpRequestFactory httpRequestFactory) {
+
 		super(httpRequestFactory);
 	}
 
-	/*
-	 * =============================== ParameterizedTypeReference
-	 * ===============================
-	 */
+	public void setRestTemplateFactory(RestTemplateFactory restTemplateFactory) {
+
+		this.restTemplateFactory = restTemplateFactory;
+	}
+
 	public <T> ResponseEntity<T> doExchange(String url, HttpMethod method, HttpEntity<?> requestEntity,
 			ParameterizedTypeReference<T> responseType, Object... uriVariables) throws SapBusinessException {
 
-		int tries = 1;
-
-		do {
-			try {
-				return super.exchange(url, method, requestEntity, responseType, uriVariables);
-			} catch (ResourceAccessException e) {
-				if (tries == 3) {
-					throw new SapBusinessException("Error de conexión con SAP", e);
-				}
-				tries++;
-			} catch (RestClientResponseException e) {
-				throw buildSapException(e, url);
-			} catch (RestClientException e) {
-				throw new SapBusinessException("Error técnico llamando a SAP", e);
-			}
-		} while (tries < 3);
-
-		return null;
+		return executeWithRetry(url,
+				template -> template.exchange(url, method, requestEntity, responseType, uriVariables));
 	}
 
-	/*
-	 * =============================== Class<T> ===============================
-	 */
 	public <T> ResponseEntity<T> doExchange(String url, HttpMethod method, HttpEntity<?> requestEntity,
 			Class<T> responseType, Object... uriVariables) throws SapBusinessException {
-		int tries = 1;
-		do {
+
+		return executeWithRetry(url,
+				template -> template.exchange(url, method, requestEntity, responseType, uriVariables));
+	}
+
+	private <T> ResponseEntity<T> executeWithRetry(String url,
+			Function<RestTemplatePremec, ResponseEntity<T>> operation) throws SapBusinessException {
+
+		int tries = 0;
+
+		RestTemplatePremec currentTemplate = this;
+
+		while (tries < MAX_RETRIES) {
+
 			try {
-				return super.exchange(url, method, requestEntity, responseType, uriVariables);
+
+				return operation.apply(currentTemplate);
+
 			} catch (ResourceAccessException e) {
-				if (tries == 3) {
+
+				tries++;
+
+				if (tries >= MAX_RETRIES) {
+
 					throw new SapBusinessException("Error de conexión con SAP", e);
 				}
-				tries++;
+
+				currentTemplate = reconnect();
+
+			} catch (RestClientResponseException e) {
+
+				int statusCode = e.getRawStatusCode();
+
+				if (statusCode == 401) {
+
+					tries++;
+
+					if (tries >= MAX_RETRIES) {
+
+						throw buildSapException(e, url);
+					}
+
+					currentTemplate = reconnect();
+
+				} else {
+
+					throw buildSapException(e, url);
+				}
+
 			} catch (RestClientException e) {
-				throw buildSapException(e, url);
+
+				throw new SapBusinessException("Error técnico llamando a SAP", e);
 			}
+		}
 
-		} while (tries < 3);
-
-		return null;
+		throw new SapBusinessException("No fue posible comunicarse con SAP", null);
 	}
 
-	/*
-	 * =============================== SAP Error handling centralizado
-	 * ===============================
-	 */
-	private SapBusinessException buildSapException(RestClientException e, String url) {
-	    String responseBody = e.getLocalizedMessage();
-	    int statusCode = 500; // Valor por defecto si no hay status code
+	private RestTemplatePremec reconnect() throws SapBusinessException {
 
-	    if (responseBody != null && !responseBody.isEmpty()) {
-	        try {
-	            SapErrorResponseDTO sapError = objectMapper.readValue(responseBody, SapErrorResponseDTO.class);
+		if (restTemplateFactory == null) {
 
-	            if (sapError != null && sapError.getError() != null) {
-	                return new SapBusinessException(sapError, statusCode);
-	            }
-	        } catch (Exception ignored) {
-	            // Error de parseo, continuamos al fallback
-	        }
-	    }
+			throw new SapBusinessException("No se encuentra configurado el RestTemplateFactory", null);
+		}
 
-	    // Fallback si no hay body o falló el parseo
-	    return new SapBusinessException("Error SAP Service Layer. HTTP " + statusCode + " - " + url, e);
+		RestTemplatePremec nuevoTemplate = restTemplateFactory.reconnect();
+
+		if (nuevoTemplate == null) {
+
+			throw new SapBusinessException("No fue posible establecer una nueva sesión con SAP", null);
+		}
+
+		return nuevoTemplate;
 	}
 
-	/*
-	 * =============================== Session helpers
-	 * ===============================
-	 */
+	private SapBusinessException buildSapException(RestClientResponseException e, String url) {
+
+		String responseBody = e.getResponseBodyAsString();
+
+		int statusCode = e.getRawStatusCode();
+
+		if (responseBody != null && !responseBody.isEmpty()) {
+
+			try {
+
+				SapErrorResponseDTO sapError = objectMapper.readValue(responseBody, SapErrorResponseDTO.class);
+
+				if (sapError != null && sapError.getError() != null) {
+
+					return new SapBusinessException(sapError, statusCode);
+				}
+
+			} catch (Exception ignored) {
+				// Fallback
+			}
+		}
+
+		return new SapBusinessException("Error SAP Service Layer. HTTP " + statusCode + " - " + url, e);
+	}
+
 	public void addSessionExpiration(Integer minutes) {
+
 		minutes = minutes - 5;
+
 		Calendar instance = Calendar.getInstance();
+
 		instance.add(Calendar.MINUTE, minutes);
+
 		expiration = instance.getTime();
 	}
 
 	public boolean isSessionActive() {
+
 		return expiration != null && Calendar.getInstance().getTime().before(expiration);
 	}
-
-	public HttpHeaders getDefaultHeaders() {
-		return defaultHeaders;
-	}
-
-	public void setDefaultHeaders(HttpHeaders defaultHeaders) {
-		this.defaultHeaders = defaultHeaders;
-	}
 }
-
-//package ar.com.avaco.factory;
-//
-//import java.util.Calendar;
-//import java.util.Date;
-//
-//import org.springframework.core.ParameterizedTypeReference;
-//import org.springframework.http.HttpEntity;
-//import org.springframework.http.HttpHeaders;
-//import org.springframework.http.HttpMethod;
-//import org.springframework.http.ResponseEntity;
-//import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
-//import org.springframework.web.client.ResourceAccessException;
-//import org.springframework.web.client.RestClientException;
-//import org.springframework.web.client.RestTemplate;
-//
-//public class RestTemplatePremec extends RestTemplate {
-//
-//	private Date expiration;
-//
-//	private HttpHeaders defaultHeaders;
-//
-//	public RestTemplatePremec(HttpComponentsClientHttpRequestFactory httpRequestFactory) {
-//		super(httpRequestFactory);
-//	}
-//
-//	public <T> ResponseEntity<T> doExchange(String url, HttpMethod method, HttpEntity<?> requestEntity,
-//			ParameterizedTypeReference<T> responseType, Object... uriVariables) throws SapBusinessException {
-//		int tries = 1;
-//		ResponseEntity<T> exchange = null;
-//		do {
-//			try {
-//				exchange = super.exchange(url, method, requestEntity, responseType, uriVariables);
-//			} catch (ResourceAccessException e) {
-//				if (tries == 3)
-//					throw new SapBusinessException(e);
-//				tries++;
-//			} catch (RestClientException rce) {
-//				throw new SapBusinessException(rce);
-//			}
-//		} while (tries < 3 && exchange == null);
-//		return exchange;
-//
-//	}
-//
-//	public <T> ResponseEntity<T> doExchange(String url, HttpMethod method, HttpEntity<?> requestEntity,
-//			Class<T> responseType, Object... uriVariables) throws SapBusinessException {
-//
-//		int tries = 1;
-//		ResponseEntity<T> exchange = null;
-//		do {
-//			try {
-//				exchange = super.exchange(url, method, requestEntity, responseType, uriVariables);
-//			} catch (ResourceAccessException e) {
-//				if (tries == 3)
-//					throw new SapBusinessException(e);
-//				tries++;
-//			} catch (RestClientException rce) {
-//				throw new SapBusinessException(rce);
-//			} catch (Exception e) {
-//				throw new SapBusinessException(e);
-//			}
-//		} while (tries < 3 && exchange == null);
-//		return exchange;
-//
-//	}
-//
-//	public void addSessionExpiration(Integer minutes) {
-//		minutes = minutes - 5;
-//		Calendar instance = Calendar.getInstance();
-//		instance.add(Calendar.MINUTE, minutes);
-//		expiration = instance.getTime();
-//
-//	}
-//
-//	public boolean isSessionActive() {
-//		return Calendar.getInstance().getTime().before(expiration);
-//	}
-//
-//	public HttpHeaders getDefaultHeaders() {
-//		return defaultHeaders;
-//	}
-//
-//	public void setDefaultHeaders(HttpHeaders defaultHeaders) {
-//		this.defaultHeaders = defaultHeaders;
-//	}
-//
-//}

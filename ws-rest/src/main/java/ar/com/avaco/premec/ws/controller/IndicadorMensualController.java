@@ -28,6 +28,11 @@ public class IndicadorMensualController {
 	@Autowired
 	private IndicadorMensualService indicadorMensualService;
 
+	/////////////////////
+	// MIS INDICADORES //
+	/////////////////////
+
+	
 	@RequestMapping(value = "/indicadorMensual", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<JSONResponse> indicadorMensual(@RequestParam String mes, @RequestParam String anio) {
 		JSONResponse response = new JSONResponse();
