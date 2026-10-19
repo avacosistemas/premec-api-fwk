@@ -136,7 +136,7 @@ public class ReciboSueldoRestController {
 			// Rect para extracción (invertido)
 			Rectangle rectPeriodo = new Rectangle(28, 134, 90, 12);
 			Rectangle rectLegajo = new Rectangle(28, 165, 90, 12);
-			Rectangle rectSueldoJornal = new Rectangle(490, 210, 100, 12);
+			Rectangle rectSueldoJornal = new Rectangle(490, 227, 100, 12);
 			Rectangle rectDescripcion = new Rectangle(120, 134, 236, 12);
 
 			Rectangle rectNombre = new Rectangle(120, 165, 236, 12);
@@ -181,17 +181,17 @@ public class ReciboSueldoRestController {
 					dibujarRectangulo(contentStream, pageHeight, rectSueldoJornal);
 					dibujarRectangulo(contentStream, pageHeight, rectFirma);
 					
-					String pathFirma = "D:/desarrollo/premec/firma.jpg"; // luego lo reemplazás
-
-				    PDImageXObject firma = PDImageXObject.createFromFile(pathFirma, document);
-
-				    contentStream.drawImage(
-				            firma,
-				            rectFirma.x,
-				            pageHeight - rectFirma.y - rectFirma.height,
-				            rectFirma.width,
-				            rectFirma.height
-				    );
+//					String pathFirma = "D:/desarrollo/premec/firma.jpg"; // luego lo reemplazás
+//
+//				    PDImageXObject firma = PDImageXObject.createFromFile(pathFirma, document);
+//
+//				    contentStream.drawImage(
+//				            firma,
+//				            rectFirma.x,
+//				            pageHeight - rectFirma.y - rectFirma.height,
+//				            rectFirma.width,
+//				            rectFirma.height
+//				    );
 					
 				}
 

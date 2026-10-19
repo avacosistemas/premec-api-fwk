@@ -253,7 +253,7 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 			Rectangle rectNombre = new Rectangle(120, 165, 236, 12);
 			stripper.addRegion("nombre", rectNombre);
 
-			Rectangle rectSueldoJornal = new Rectangle(490, 210, 100, 12);
+			Rectangle rectSueldoJornal = new Rectangle(490, 227, 100, 12);
 			stripper.addRegion("sueldoJornal", rectSueldoJornal);
 
 			Map<Long, ReciboSueldoArchivoDTO> docsPorLegajo = new LinkedHashMap<>();

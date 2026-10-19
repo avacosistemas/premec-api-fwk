@@ -3,26 +3,32 @@ package ar.com.avaco.premec.ws.service;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.text.SimpleDateFormat;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.log4j.Logger;
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.util.CellReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -35,6 +41,7 @@ import ar.com.avaco.premec.dto.EmpleadoSap;
 import ar.com.avaco.premec.dto.RegistroFichadoDTO;
 import ar.com.avaco.premec.repository.UsuarioPremecRepository;
 import ar.com.avaco.premec.sap.exception.SapBusinessException;
+import ar.com.avaco.premec.utils.FichadoUtils;
 import ar.com.avaco.premec.ws.dto.actividad.HorasPorEmpleadoDTO;
 import ar.com.avaco.premec.ws.dto.employee.EmployeesInfoReponseSapDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.ProjectManagementTimeSheetGetDTO;
@@ -55,8 +62,6 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 	@Autowired
 	private ActivityService activityService;
 
-	private final Logger logger = Logger.getLogger(this.getClass());
-
 	@Value(value = "${exclusiones.actividades.calculo.horas.netas}")
 	private String exclusionesActividadesCalculoHorasNetas;
 
@@ -66,76 +71,433 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 	@Value(value = "${licencia.nojustificada}")
 	private String licenciasNoJustificada;
 
+	@Autowired
+	private SQLServerConnection sqlConnection;
+
 	@Override
 	public List<EmpleadoFichados> parsearExcelNovedadesFichado(byte[] archivoBytes) throws IOException {
+
+		// Obtengo todos los empleados
+		List<EmployeesInfoReponseSapDTO> allEmployees = employeeService.getAllEmployees();
+
+		List<UsuarioPremec> usuariosPremec = usuarioPremecRepository.findAll();
+
+		// Obtengo los codigos de ausentismo
+		Set<String> codigosAusentismo = getCodigosAusentismo().keySet();
+
+		// Armo mapa de errores con linea como clave y mensaje como valor
+		Map<String, String> errores = new HashMap<String, String>();
 
 		// Inicializo el listado
 		List<EmpleadoFichados> empleadoFichadoList = new ArrayList<>();
 
 		// Importo el archivo y lo convierto en libro de excel
 		try (InputStream inputStream = new ByteArrayInputStream(archivoBytes)) {
-			Workbook workbook = WorkbookFactory.create(inputStream);
 
+			Workbook workbook = WorkbookFactory.create(inputStream);
 			Sheet sheet = workbook.getSheetAt(0);
 
+			// Armo mapa de EmpleadoSAP como clave y su listado de registros por dia
+			// asociado
 			Map<EmpleadoSap, List<RegistroFichadoDTO>> empleados = new HashMap<EmpleadoSap, List<RegistroFichadoDTO>>();
 
+			// Empiezo a recorrer las filas del excel
 			for (int i = 0; i <= sheet.getLastRowNum();) {
-				Row headerRow = sheet.getRow(i);
-				if (headerRow == null || !getCellValue(headerRow.getCell(0)).equalsIgnoreCase("legajo")) {
+
+				// Busco la primer aparicion de legajo
+				Row fila = sheet.getRow(i);
+
+				if (fila == null || !FichadoUtils.getCellValue(fila.getCell(0)).equalsIgnoreCase("legajo")) {
 					i++;
 					continue;
 				}
 
+				String is = String.valueOf(fila.getRowNum() + 1);
+
 				// Extraer legajo y nombre
-				String legajoNombre = getCellValue(headerRow.getCell(1));
+				String legajoNombre = FichadoUtils.getCellValue(fila.getCell(1));
 				String[] partes = legajoNombre.split(" ");
 				String legajo = partes[0].trim();
+				
+				String turno = FichadoUtils.getCellValue(fila.getCell(4));
+				String sector = turno.split(":")[0].trim();
+				
+				boolean validarHorasExtras = sector.equalsIgnoreCase("TALLER");
+				
+				// Busco el usuario premec
 
-				UsuarioPremec usuario = usuarioPremecRepository.findByLegajo(Long.parseLong(legajo));
+				UsuarioPremec usuario = usuariosPremec.stream().filter(x -> x != null)
+						.filter(x -> Long.valueOf(legajo).equals(x.getLegajo())).findFirst().orElse(null);
 
 				EmpleadoSap empleado = new EmpleadoSap();
-				if (usuario != null) {
+
+				EmployeesInfoReponseSapDTO employee = null;
+				
+				if (usuario == null) {
+					errores.put(is,
+							"El empleado " + legajoNombre + " no se encuentra dado de alta en el sistema con el "
+									+ legajo + ". Agregarlo con el legajo y usuario sap correspondiente.");
+				} else if (StringUtils.isBlank(usuario.getUsuariosap())) {
+					errores.put(is, "El empleado " + legajoNombre + " con legajo " + usuario.getLegajo()
+							+ " no tiene asignado usuario sap. Asignarlo para poder continuar.");
+				} else {
 					empleado.setApellido(usuario.getApellido());
 					empleado.setNombre(usuario.getNombre());
 					empleado.setUsername(usuario.getUsername());
+					empleado.setLegajo(Long.parseLong(legajo));
 					empleado.setUsuarioSap(usuario.getUsuariosap());
-				} else {
-					empleado.setNombre("No existe usuario con este legajo - ");
-					empleado.setApellido(partes[1].trim());
+
+					System.out.print("Buscando usuario sap con id " + usuario.getUsuariosap());
+
+					employee = allEmployees.stream().filter(x -> x != null)
+							.filter(x -> usuario.getUsuariosap().equals(x.getIdEmpleado().toString())).findFirst()
+							.orElse(null);
+
+					String horarioEntradaEmpleado = employee.getHoraInicio();
+
+					if (horarioEntradaEmpleado == null) {
+						errores.put(is, "El empleado " + employee.getLastName() + " " + employee.getFirstName()
+								+ " no tiene horario de inicio cargado en SAP");
+					}
+
+					if (employee.getHoraFin() == null) {
+						errores.put(is, "El empleado " + employee.getLastName() + " " + employee.getFirstName()
+								+ " no tiene horario de salida cargado en SAP");
+					}
+
 				}
-				empleado.setLegajo(Long.parseLong(legajo));
 
 				// Fila siguiente: cabecera de registros
+				String[] encabezadosEsperados = { "Dia", "Fecha", "Entrada", "Salida", "Entrada", "Salida", "Total dia",
+						"Descanso", "Normal", "Extra 50%", "Extra 100%", "Tarde", "Comentarios" };
+
+				Row headerRegistros = sheet.getRow(i + 1);
+
+				if (headerRegistros == null) {
+					errores.put(String.valueOf(i + 2), "No se encontró el encabezado de registros.");
+					throw new ErrorValidationException(errores);
+				}
+
+				for (int columna = 0; columna < encabezadosEsperados.length; columna++) {
+
+					String valor = FichadoUtils.getCellValue(headerRegistros.getCell(columna)).trim();
+
+					if (!encabezadosEsperados[columna].equalsIgnoreCase(valor)) {
+						errores.put(String.valueOf(i + 2),
+								"Encabezado inválido en columna " + (columna + 1) + ". Se esperaba '"
+										+ encabezadosEsperados[columna] + "' y se encontró '" + valor + "'.");
+
+						throw new ErrorValidationException(errores);
+					}
+				}
+
+				// Encabezado correcto, comienzo a procesar registros
 				i += 2;
+
 				List<RegistroFichadoDTO> registros = new ArrayList<>();
 
+				// Una vez que encontré la cabecera lo siguiente es
+
 				while (i <= sheet.getLastRowNum()) {
-					Row fila = sheet.getRow(i);
-					if (fila == null || isRowEmpty(fila)) {
+
+					// Si lo siguiente es una fila vacia me pongo a buscar otra vez una cabecera
+					fila = sheet.getRow(i);
+
+					if (fila == null || FichadoUtils.isRowEmpty(fila)) {
 						i++; // saltamos fila vacía
 						break;
 					}
 
-					String comentarios = getCellValue(fila.getCell(12)).trim();
+					is = String.valueOf(fila.getRowNum() + 1);
+
+					// Obtengo la columna comentarios
+					String comentarios = FichadoUtils.getCellValue(fila.getCell(12)).trim();
+
+					// Si esta vacia o no empieza con FRAN puedo continuar ya que tambien se
+					// incluyen sabados y domingos
 					if (comentarios == null || !comentarios.startsWith("FRAN")) {
+
+						// Armo un nuevo registro de fichado
 						RegistroFichadoDTO registro = new RegistroFichadoDTO();
-						registro.setDia(DateUtils.toString(
-								DateUtils.toDate(fila.getCell(0).toString().trim(), "dd/MM/yy"), "dd/MM/yyyy"));
-						registro.setFecha(getCellValue(fila.getCell(1)).trim());
-						registro.setEntrada1(getCellValue(fila.getCell(2)).trim());
-						registro.setSalida1(getCellValue(fila.getCell(3)).trim());
-						registro.setEntrada2(getCellValue(fila.getCell(4)).trim());
-						registro.setSalida2(getCellValue(fila.getCell(5)).trim());
-						registro.setTotalDia(getCellValue(fila.getCell(6)).trim());
-						registro.setDescanso(getCellValue(fila.getCell(7)).trim());
-						registro.setNormal(getCellValue(fila.getCell(8)).trim());
-						registro.setExtra50(getCellValue(fila.getCell(9)).trim());
-						registro.setExtra100(getCellValue(fila.getCell(10)).trim());
-						registro.setTarde(getCellValue(fila.getCell(11)).trim());
-						registro.setComentarios(comentarios);
+
+						// Fecha del registro formato dd/MM/yy
+						Cell cell = fila.getCell(0);
+						String fecha = cell.toString().trim();
+						try {
+							LocalDate fechaDate = LocalDate.parse(fecha,
+									DateTimeFormatter.ofPattern("dd/MM/uu").withResolverStyle(ResolverStyle.STRICT));
+							registro.setDia(fechaDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+						} catch (DateTimeParseException e) {
+							errores.put(is + " " + CellReference.convertNumToColString(0), "Fecha inválida: " + fecha);
+						}
+
+						// Dia de la semana (lunes, martes, etc...)
+						registro.setFecha(FichadoUtils.getCellValue(fila.getCell(1)).trim());
+
+						boolean par1Valido = false;
+						boolean par2Valido = false;
+
+						// ============================================================
+						// ENTRADA 1 - Obligatoria
+						// ============================================================
+
+						String entrada1 = FichadoUtils.getCellValue(fila.getCell(2)).trim();
+						boolean entrada1Valida = false;
+
+						if (StringUtils.isBlank(entrada1)) {
+
+							errores.put(is + " " + CellReference.convertNumToColString(2), "Primer hora entrada vacía");
+
+						} else if (!FichadoUtils.esHoraValida(entrada1)) {
+
+							errores.put(is + " " + CellReference.convertNumToColString(2),
+									"Primer hora entrada inválida: " + entrada1);
+
+						} else {
+
+							registro.setEntrada1(entrada1);
+							entrada1Valida = true;
+						}
+
+						// ============================================================
+						// SALIDA 1 - Obligatoria
+						// ============================================================
+
+						String salida1 = FichadoUtils.getCellValue(fila.getCell(3)).trim();
+						boolean salida1Valida = false;
+
+						if (StringUtils.isBlank(salida1)) {
+
+							errores.put(is + " " + CellReference.convertNumToColString(3), "Primer hora salida vacía");
+
+						} else if (!FichadoUtils.esHoraValida(salida1)) {
+
+							errores.put(is + " " + CellReference.convertNumToColString(3),
+									"Primer hora salida inválida: " + salida1);
+
+						} else {
+
+							registro.setSalida1(salida1);
+							salida1Valida = true;
+						}
+
+						// ============================================================
+						// VALIDACIÓN DEL PRIMER PAR
+						// ============================================================
+
+						if (entrada1Valida && salida1Valida) {
+
+							if (!FichadoUtils.isHorarioSiguienteCorrecto(entrada1, salida1)) {
+
+								errores.put(is, "Primer hora salida no es posterior a primer hora entrada");
+
+							} else {
+
+								par1Valido = true;
+							}
+						}
+
+						// ============================================================
+						// ENTRADA 2 - Opcional
+						// ============================================================
+
+						String entrada2 = FichadoUtils.getCellValue(fila.getCell(4)).trim();
+						boolean entrada2Valida = false;
+
+						if (!StringUtils.isBlank(entrada2)) {
+
+							if (!FichadoUtils.esHoraValida(entrada2)) {
+
+								errores.put(is + " " + CellReference.convertNumToColString(4),
+										"Segunda hora entrada inválida: " + entrada2);
+
+							} else {
+
+								entrada2Valida = true;
+
+								if (salida1Valida && !FichadoUtils.isHorarioSiguienteCorrecto(salida1, entrada2)) {
+
+									errores.put(is, "Segunda hora entrada no es posterior a primer hora salida");
+
+								} else {
+
+									registro.setEntrada2(entrada2);
+								}
+							}
+						}
+
+						// ============================================================
+						// SALIDA 2 - Opcional
+						// ============================================================
+
+						String salida2 = FichadoUtils.getCellValue(fila.getCell(5)).trim();
+						boolean salida2Valida = false;
+
+						if (!StringUtils.isBlank(salida2)) {
+
+							if (!FichadoUtils.esHoraValida(salida2)) {
+
+								errores.put(is + " " + CellReference.convertNumToColString(5),
+										"Segunda hora salida inválida: " + salida2);
+
+							} else {
+
+								salida2Valida = true;
+								registro.setSalida2(salida2);
+							}
+						}
+
+						// ============================================================
+						// VALIDACIÓN DEL SEGUNDO PAR
+						// ============================================================
+
+						// Si hay entrada2, debe haber salida2
+						if (entrada2Valida && !salida2Valida) {
+
+							errores.put(is + " " + CellReference.convertNumToColString(5), "Segunda hora salida vacía");
+						}
+
+						// Si hay salida2, debe haber entrada2
+						if (salida2Valida && !entrada2Valida) {
+
+							errores.put(is + " " + CellReference.convertNumToColString(4),
+									"Segunda hora entrada vacía");
+						}
+
+						// Si ambas son válidas, validar que salida2 sea posterior a entrada2
+						if (entrada2Valida && salida2Valida) {
+
+							if (!FichadoUtils.isHorarioSiguienteCorrecto(entrada2, salida2)) {
+
+								errores.put(is, "Segunda hora salida no es posterior a segunda hora entrada");
+
+							} else {
+
+								par2Valido = true;
+							}
+						}
+
+						// Total Dia
+						registro.setTotalDia(FichadoUtils.getCellValue(fila.getCell(6)).trim());
+						
+
+						// Descanso
+						registro.setDescanso(FichadoUtils.getCellValue(fila.getCell(7)).trim());
+
+						// VALIDAR SI VIENE VACIA.
+						// SI EL ULTIMO FICHADO (DEL PRIMERO O SEGUNDO PERIODO) ES ANTES DEL HORARIO DE
+						// FIN DEL EMPLEADO -> MOSTRAR BIEN
+						// SI EL ULTIMO FICHADO (DEL PRIMERO O SEGUNDO PERIODO) ES DESPUES DEL HORARIO
+						// DE FIN -> VALIDAR QUE TENGA HS EXTRAS AL 50 O 100 -> SINO TIENE ERROR
+						// normal
+
+						boolean par2Informado = false;
+						
+						par2Informado = !StringUtils.isBlank(entrada2)
+						        || !StringUtils.isBlank(salida2);
+						
+						boolean paresValidosYConsecutivos = false;
+
+						if (par1Valido) {
+
+						    // No se informó segundo par: está todo bien
+						    if (!par2Informado) {
+
+						        paresValidosYConsecutivos = true;
+
+						    // Se informó segundo par: debe ser válido y consecutivo
+						    } else if (par2Valido
+						            && FichadoUtils.isHorarioSiguienteCorrecto(salida1, entrada2)) {
+
+						        paresValidosYConsecutivos = true;
+						    }
+						}
+						
+						String salidaFinal = null;
+
+						if (paresValidosYConsecutivos) {
+						    salidaFinal = par2Valido ? salida2 : salida1;
+						}
+						
+						boolean debeTenerHorasExtras = false;
+						
+						String normal = FichadoUtils.getCellValue(fila.getCell(8)).trim();
+						if (StringUtils.isBlank(normal)) {
+							
+							boolean ingresoEnHorario = false;
+
+							if (entrada1Valida
+							        && FichadoUtils.estaDentroDelHorarioContrato(entrada1, employee.getHoraFin())) {
+							    ingresoEnHorario = true;
+							}
+
+							if (!ingresoEnHorario && entrada2Valida
+							        && FichadoUtils.estaDentroDelHorarioContrato(entrada2, employee.getHoraFin())) {
+							    ingresoEnHorario = true;
+							}
+							
+							if (ingresoEnHorario) {
+								errores.put(is + " " + CellReference.convertNumToColString(8), "El empleado fichó ingreso dentro del rango horario del contrato. Por lo tanto debe tener horas normales cargadas.");
+							}
+							
+							
+						} else if (!FichadoUtils.esHoraValida(normal)) {
+							errores.put(is + " " + CellReference.convertNumToColString(8),
+									"Normal invalida: " + normal);
+						} else {
+							registro.setNormal(normal);
+						}
+
+						if (salidaFinal != null && employee != null && FichadoUtils.isHorarioSiguienteCorrecto(employee.getHoraFin(), salidaFinal)) {
+							debeTenerHorasExtras = true;
+						}
+						
+						boolean horaextra50valida = false;
+						// extra al 50 puede estar vacia
+						String extra50 = FichadoUtils.getCellValue(fila.getCell(9)).trim();
+						if (StringUtils.isBlank(extra50)) {
+
+						} else if (FichadoUtils.esHoraValida(extra50)) {
+							registro.setExtra50(extra50);
+							horaextra50valida = true;
+						} else {
+							errores.put(is + " " + CellReference.convertNumToColString(9),
+									"Extra 50% invalida: " + extra50);
+						}
+
+						boolean horaextra100valida = false;
+						// extra al 100 puede estar vacia
+						String extra100 = FichadoUtils.getCellValue(fila.getCell(10)).trim();
+						if (StringUtils.isBlank(extra100)) {
+
+						} else if (FichadoUtils.esHoraValida(extra100)) {
+							registro.setExtra100(extra100);
+							horaextra100valida = true;
+						} else {
+							errores.put(is + " " + CellReference.convertNumToColString(10),
+									"Extra 100% invalida: " + extra100);
+						}
+						
+						if (validarHorasExtras && debeTenerHorasExtras && !horaextra50valida && !horaextra100valida) {
+							errores.put(is + " " + CellReference.convertNumToColString(10), "El empleado fichó salida posterior al horario de salida por contrato. Por lo tanto, debe tener horas extras al 50% o al 100% cargadas.");
+						}
+						
+						registro.setTarde(FichadoUtils.getCellValue(fila.getCell(11)).trim());
+
+						if (StringUtils.isEmpty(comentarios)
+								|| FichadoUtils.isComentarioValido(codigosAusentismo, comentarios)) {
+							registro.setComentarios(comentarios);
+						} else {
+							errores.put(is + " " + CellReference.convertNumToColString(12),
+									"Columna obsevación con valor invalido: " + comentarios);
+						}
+
 						registros.add(registro);
-						logger.debug("Linea " + i + " procesada correctamente");
+
+						
+						// FXIME validar la hora normal que tenga cargada si el horario de fichado de ingreso del empleado
+						// esta entre los horarios de ingreso/salida asignados.
+						
 					}
 					i++;
 				}
@@ -148,6 +510,13 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 			workbook.close();
 			// file.close();
 
+			if (!errores.isEmpty()) {
+				errores.forEach((x, y) -> {
+					System.out.println("Fila " + x + " - " + y);
+				});
+				throw new ErrorValidationException(errores);
+			}
+
 			empleados.forEach((x, y) -> empleadoFichadoList.add(new EmpleadoFichados(x, y)));
 		}
 
@@ -158,6 +527,11 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 		};
 
 		empleadoFichadoList.sort(comparator);
+
+		if (empleadoFichadoList.isEmpty()) {
+			errores.put("0", "No se encontraron legajos para procesar");
+			throw new ErrorValidationException(errores);
+		}
 
 		return empleadoFichadoList;
 	}
@@ -179,23 +553,19 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 			// Obtengo el usuario SAP
 			String usuarioSap = registro.getEmpleado().getUsuarioSap();
 
-			// Si tiene usuario SAP
-			if (StringUtils.isNotBlank(usuarioSap)) {
+			// Agrego el empleado
+			employeeIds.add(Long.parseLong(usuarioSap));
 
-				// Agrego el empleado
-				employeeIds.add(new Long(usuarioSap));
+			// Voy tomando la fecha desde/hasta de todos los fichados en general de todos
+			// los empleados
+			for (RegistroFichadoDTO fichado : registro.getFichados()) {
+				Date fechaFichado = DateUtils.toDate(fichado.getDia(), "dd/MM/yyyy");
+				if (desdeRango == null || fechaFichado.before(desdeRango)) {
+					desdeRango = fechaFichado;
+				}
 
-				// Voy tomando la fecha desde/hasta de todos los fichados en general de todos
-				// los empleados
-				for (RegistroFichadoDTO fichado : registro.getFichados()) {
-					Date fechaFichado = DateUtils.toDate(fichado.getDia(), "dd/MM/yyyy");
-					if (desdeRango == null || fechaFichado.before(desdeRango)) {
-						desdeRango = fechaFichado;
-					}
-
-					if (hastaRango == null || hastaRango.before(fechaFichado)) {
-						hastaRango = fechaFichado;
-					}
+				if (hastaRango == null || hastaRango.before(fechaFichado)) {
+					hastaRango = fechaFichado;
 				}
 			}
 		}
@@ -222,264 +592,227 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 		// Por cada empleado
 		for (EmpleadoFichados registroEmpleadoDTO : registros) {
 
-			// Obtengo el usuario sap
-			String usuarioSapString = registroEmpleadoDTO.getEmpleado().getUsuarioSap();
+			// Obtengo usuario Sap
+			Long usuarioSap = Long.parseLong(registroEmpleadoDTO.getEmpleado().getUsuarioSap());
 
-			// Si tiene usuario sap
-			if (StringUtils.isNotBlank(usuarioSapString)) {
+			// Busco el empleado en SAP
+			// FIXME para optimizar armar un query que traiga todo y armar un mapa
+			EmployeesInfoReponseSapDTO employee = employeeService.getById(usuarioSap);
 
-				// Obtengo usuario Sap en Long
-				Long usuarioSap = Long.parseLong(usuarioSapString);
+			boolean isServicioTecnico = "SI".equals(employee.getServicioTecnico());
 
-				// Busco el empleado en SAP
-				// FIXME para optimizar armar un query que traiga todo y armar un mapa
-				EmployeesInfoReponseSapDTO employee = employeeService.getById(usuarioSap);
+			// FIXME Comidas
+			// Servicio Tecnico SI -> reviso comidas
+			// Servicio Tecnico NO -> ver si en el día tiene al menos una actividad
+			// que no sea de taller y que finalice despues de las 12
 
-				boolean isServicioTecnico = "SI".equals(employee.getServicioTecnico());
+			// Por cada registro de horas por dia
+			for (RegistroFichadoDTO fichadoDTO : registroEmpleadoDTO.getFichados()) {
 
-				// FIXME Comidas
-				// Servicio Tecnico SI -> reviso comidas
-				// Servicio Tecnico NO -> ver si en el día tiene al menos una actividad
-				// que no sea de taller y que finalice despues de las 12
+				String key = usuarioSap + "-" + fichadoDTO.getDia();
+				HorasPorEmpleadoDTO horasPorEmpleadoDTO = mapaSegundosEmpleadoDiaActividad.get(key);
 
-				// Por cada registro de horas por dia
-				for (RegistroFichadoDTO fichadoDTO : registroEmpleadoDTO.getFichados()) {
+				double pagoHorasProductivas = horasPorEmpleadoDTO != null
+						? horasPorEmpleadoDTO.getPagoHorasProductivas()
+						: 0;
 
-					String key = usuarioSap + "-" + fichadoDTO.getDia();
-					HorasPorEmpleadoDTO horasPorEmpleadoDTO = mapaSegundosEmpleadoDiaActividad.get(key);
+				boolean isTieneAcNoTallerDespuesMediodia = horasPorEmpleadoDTO != null
+						? "Y".equals(horasPorEmpleadoDTO.getTieneActNoTallerDespuesMediodia())
+						: false;
 
-					double pagoHorasProductivas = horasPorEmpleadoDTO != null
-							? horasPorEmpleadoDTO.getPagoHorasProductivas()
-							: 0;
+				boolean aplicaComida = isTieneAcNoTallerDespuesMediodia || isServicioTecnico;
 
-					boolean isTieneAcNoTallerDespuesMediodia = horasPorEmpleadoDTO != null
-							? "Y".equals(horasPorEmpleadoDTO.getTieneActNoTallerDespuesMediodia())
-							: false;
+				boolean tieneEntrada1 = StringUtils.isNotBlank(fichadoDTO.getEntrada1());
+				boolean tieneSalida1 = StringUtils.isNotBlank(fichadoDTO.getSalida1());
+				boolean tienenES1 = tieneEntrada1 && tieneSalida1;
 
-					boolean aplicaComida = isTieneAcNoTallerDespuesMediodia || isServicioTecnico;
+				boolean tieneEntrada2 = StringUtils.isNotBlank(fichadoDTO.getEntrada2());
+				boolean tieneSalida2 = StringUtils.isNotBlank(fichadoDTO.getSalida2());
+				boolean tienenES2 = tieneEntrada2 && tieneSalida2;
 
-					boolean tieneEntrada1 = StringUtils.isNotBlank(fichadoDTO.getEntrada1());
-					boolean tieneSalida1 = StringUtils.isNotBlank(fichadoDTO.getSalida1());
-					boolean tienenES1 = tieneEntrada1 && tieneSalida1;
+				// Calculo el periodo por cada registro porque puede haber fechas de varios
+				// periodos
+				String[] split = fichadoDTO.getDia().split("/");
+				String month = split[1].trim();
+				String year = split[2].trim();
 
-					boolean tieneEntrada2 = StringUtils.isNotBlank(fichadoDTO.getEntrada2());
-					boolean tieneSalida2 = StringUtils.isNotBlank(fichadoDTO.getSalida2());
-					boolean tienenES2 = tieneEntrada2 && tieneSalida2;
+				String fechaDesdePeriodo = year + month + "01";
 
-					boolean tienenES2CompletoIncompleto = !(tieneEntrada2 ^ tieneSalida2);
+				Calendar instance = Calendar.getInstance();
+				instance.set(Integer.parseInt(year), Integer.parseInt(month) - 1, 1);
+				instance.add(Calendar.MONTH, 1);
+				instance.add(Calendar.DAY_OF_MONTH, -1);
 
-					// Si tiene horario de fin, entonces proceso el registro
-					if (tienenES1 && tienenES2CompletoIncompleto
-							&& !DateUtils.calcularDiferenciaHorario(fichadoDTO.getEntrada1(), fichadoDTO.getSalida1())
-									.equals("00:00:00")) {
+				String fechaHastaPeriodo = DateUtils.toString(instance.getTime(), "yyyyMMdd");
 
-						// Calculo el periodo por cada registro porque puede haber fechas de varios
-						// periodos
-						String[] split = fichadoDTO.getDia().split("/");
-						String month = split[1].trim();
-						String year = split[2].trim();
+				// Armo el entry del mapa
+				String entryMapCabecera = usuarioSap + "-" + year + month;
 
-						String fechaDesdePeriodo = year + month + "01";
+				// Obtengo del mapa el registro
+				ProjectManagementTimeSheetGetDTO timesheet = mapaEmpleadoPeriodo.get(entryMapCabecera);
 
-						Calendar instance = Calendar.getInstance();
-						instance.set(Integer.parseInt(year), Integer.parseInt(month) - 1, 1);
-						instance.add(Calendar.MONTH, 1);
-						instance.add(Calendar.DAY_OF_MONTH, -1);
+				// Si no lo tengo en el mapa
+				if (timesheet == null) {
+					// Quiere decir que es el primer registro
 
-						String fechaHastaPeriodo = DateUtils.toString(instance.getTime(), "yyyyMMdd");
+					// Primero lo pido a sap
+					timesheet = this.timeSheetService.getTimeSheet(usuarioSap, fechaDesdePeriodo, fechaHastaPeriodo);
+				}
 
-						// Armo el entry del mapa
-						String entryMapCabecera = generarEntryMapa(usuarioSap.toString(), year + month);
+				// Si todavia no hay cabecera de periodo tengo que crearla
+				if (timesheet == null) {
+					// Genero el timesheet en sap y obtengo el entry
+					timesheet = new ProjectManagementTimeSheetGetDTO();
+					Long timesheetabsentry = this.timeSheetService.generarTimeSheet(usuarioSap, fechaDesdePeriodo,
+							fechaHastaPeriodo);
+					timesheet.setAbsEntry(timesheetabsentry);
+					timesheet.setDateFrom(fechaDesdePeriodo);
+					timesheet.setDateTo(fechaHastaPeriodo);
+					timesheet.setUserId(usuarioSap.toString());
+				}
 
-						// Obtengo del mapa el registro
-						ProjectManagementTimeSheetGetDTO timesheet = mapaEmpleadoPeriodo.get(entryMapCabecera);
+				Date fechaFichado = DateUtils.toDate(fichadoDTO.getDia(), "dd/MM/yyyy");
+				String horaFichadoEntrada = fichadoDTO.getEntrada1();
 
-						// Si no lo tengo en el mapa
-						if (timesheet == null) {
-							// Quiere decir que es el primer registro
+				// Busco el registro repetido.
+				List<ProjectManagementTimeSheetLineGetDTO> collect = timesheet.getLineas().stream()
+						.filter(x -> FichadoUtils.buscarFechaHoraRepetida(fechaFichado, horaFichadoEntrada, x))
+						.collect(Collectors.toList());
 
-							// Primero lo pido a sap
-							timesheet = this.timeSheetService.getTimeSheet(usuarioSap, fechaDesdePeriodo,
-									fechaHastaPeriodo);
+				// Si no hay registros lo agrego
+				// FIXME HAY QUE VALIDAR TAMBIEN LOS HORARIOS PORQUE PUEDEN VENIR 1 DIA EN 2
+				// REGISTROS CON DOS FICHADOS DIFERENTES
+				// ESTO ES PORQUE UNA PARTE DEL DIA FUE DE LICENCIA Y EL OTRO NO.
+				if (collect.isEmpty()) {
+
+					// Obtengo el cantidad de lineas existentes + 1
+					Long lineNum = timesheet.getLineas().size() + 1L;
+
+					String fechaFichadoyyyyMMdd = DateUtils.toString(fechaFichado, "yyyyMMdd");
+
+					// Obtengo el horario de entrada determinado por SAP
+					String horarioEntradaEmpleado = employee.getHoraInicio();
+
+					if (tienenES1 && tienenES2) {
+						// Si tengo dos pares de entrada/salida tengo que traer las horas de las
+						// actividades por dia partidas en esos horarios y generar 2 registros
+
+						////////////////
+						// Armo el primer par de entrada/salida
+						////////////////
+
+						// El total de fichado lo obtengo de la diferencia entre la primera
+						// entrada/salida
+
+						// Primero determino la hora de entrada. Si es posterior a la del empleado tomo
+						// la posterior. Si llego temprano tomo la asignada al empleado.
+
+						String diferenciaHorariaEntrada = DateUtils.calcularDiferenciaHorario(fichadoDTO.getEntrada1(),
+								horarioEntradaEmpleado);
+
+						String entrada = horarioEntradaEmpleado;
+
+						if (diferenciaHorariaEntrada == null) {
+							entrada = fichadoDTO.getEntrada1();
 						}
 
-						// Si todavia no hay cabecera de periodo tengo que crearla
-						if (timesheet == null) {
-							// Genero el timesheet en sap y obtengo el entry
-							timesheet = new ProjectManagementTimeSheetGetDTO();
-							Long timesheetabsentry = this.timeSheetService.generarTimeSheet(usuarioSap,
-									fechaDesdePeriodo, fechaHastaPeriodo);
-							timesheet.setAbsEntry(timesheetabsentry);
-							timesheet.setDateFrom(fechaDesdePeriodo);
-							timesheet.setDateTo(fechaHastaPeriodo);
-							timesheet.setUserId(usuarioSap.toString());
-						}
+						String totalFichadoHoras1 = DateUtils.calcularDiferenciaHorario(entrada,
+								fichadoDTO.getSalida1());
+						Integer totalFichadoSegundos1 = DateUtils.convertirATotalSegundos(totalFichadoHoras1);
 
-						Date fechaFichado = DateUtils.toDate(fichadoDTO.getDia(), "dd/MM/yyyy");
-						String horaFichadoIngreso = fichadoDTO.getEntrada1();
+						// Obtengo el total de horas por actividades del día y el empleado pero usando
+						// la consulta a sap y no el mapa
+						Integer totalActividadesEnSegundos = 0;
+						List<HorasPorEmpleadoDTO> totalHorasES1List = this.activityService
+								.obtenerHorasAgrupadasPorFechaEmpleado(usuarioSap, fechaFichadoyyyyMMdd,
+										fechaFichadoyyyyMMdd, fichadoDTO.getEntrada1(), fichadoDTO.getSalida1(),
+										exclusionesActividadesCalculoHorasNetas);
+						if (totalHorasES1List.size() == 1)
+							totalActividadesEnSegundos = totalHorasES1List.get(0).getDuration();
 
-						// Busco el registro repetido.
-						List<ProjectManagementTimeSheetLineGetDTO> collect = timesheet.getLineas().stream()
-								.filter(x -> buscarFechaHoraRepetida(fechaFichado, horaFichadoIngreso, x))
-								.collect(Collectors.toList());
+						Integer nofacturable = totalFichadoSegundos1 - totalActividadesEnSegundos;
 
-						// Si no hay registros lo agrego
-						// FIXME HAY QUE VALIDAR TAMBIEN LOS HORARIOS PORQUE PUEDEN VENIR 1 DIA EN 2
-						// REGISTROS CON DOS FICHADOS DIFERENTES
-						// ESTO ES PORQUE UNA PARTE DEL DIA FUE DE LICENCIA Y EL OTRO NO.
-						if (collect.isEmpty()) {
+						// Armo el nuevo registro de la collection de dias
+						ProjectManagementTimeSheetLineGetDTO timesheetline = generarTimeSheetLine(aplicaComida,
+								fechaFichado, nofacturable, lineNum, entrada, fichadoDTO.getSalida1(),
+								fichadoDTO.getNormal(), fichadoDTO.getExtra50(), fichadoDTO.getExtra100(),
+								fichadoDTO.getComentarios(), fichadoDTO.getEntrada1(), fichadoDTO.getTarde(), false,
+								pagoHorasProductivas);
 
-							// Obtengo el cantidad de lineas existentes + 1
-							Long lineNum = timesheet.getLineas().size() + 1L;
+						timesheet.getLineas().add(timesheetline);
 
-							String fechaFichadoyyyyMMdd = DateUtils.toString(fechaFichado, "yyyyMMdd");
+						////////////////
+						// Armo el segundo par de entrada/salida
+						////////////////
 
-							// Obtengo el horario de ingreso determinado por SAP
-							String horarioIngresoEmpleado = employee.getHoraInicio();
+						// El total de fichado lo obtengo de la diferencia entre la primera
+						// entrada/salida
+						String totalFichadoHoras2 = DateUtils.calcularDiferenciaHorario(fichadoDTO.getEntrada2(),
+								fichadoDTO.getSalida2());
+						Integer totalFichadoSegundos2 = DateUtils.convertirATotalSegundos(totalFichadoHoras2);
 
-							if (horarioIngresoEmpleado == null) {
-								errores.put(
-										"Legajo " + registroEmpleadoDTO.getEmpleado().getLegajo() + " - Empleado "
-												+ employee.getLastName() + " " + employee.getFirstName(),
-										"No tiene horario de inicio cargado en SAP");
-							} else {
+						Integer totalActividadesEnSegundos2 = 0;
+						List<HorasPorEmpleadoDTO> totalHorasES2List = this.activityService
+								.obtenerHorasAgrupadasPorFechaEmpleado(usuarioSap, fechaFichadoyyyyMMdd,
+										fechaFichadoyyyyMMdd, fichadoDTO.getEntrada2(), fichadoDTO.getSalida2(),
+										exclusionesActividadesCalculoHorasNetas);
+						if (totalHorasES2List.size() == 1)
+							totalActividadesEnSegundos2 = totalHorasES2List.get(0).getDuration();
 
-								if (tienenES1 && tienenES2) {
-									// Si tengo dos pares de entrada/salida tengo que traer las horas de las
-									// actividades por dia partidas en esos horarios y generar 2 registros
+						Integer nofacturable2 = totalFichadoSegundos2 - totalActividadesEnSegundos2;
 
-									////////////////
-									// Armo el primer par de entrada/salida
-									////////////////
+						// Armo el nuevo registro de la collection de dias
+						ProjectManagementTimeSheetLineGetDTO timesheetline2 = generarTimeSheetLine(aplicaComida,
+								fechaFichado, nofacturable2, lineNum + 1, fichadoDTO.getEntrada2(),
+								fichadoDTO.getSalida2(), null, null, null, null, fichadoDTO.getEntrada2(), null, true,
+								pagoHorasProductivas);
 
-									// El total de fichado lo obtengo de la diferencia entre la primera
-									// entrada/salida
+						timesheet.getLineas().add(timesheetline2);
 
-									// Primero determino la hora de entrada. Si es posterior a la del empleado tomo
-									// la posterior. Si llego temprano tomo la asignada al empleado.
-
-									String diferenciaHorariaEntrada = DateUtils.calcularDiferenciaHorario(
-											fichadoDTO.getEntrada1(), horarioIngresoEmpleado);
-
-									String ingreso = horarioIngresoEmpleado;
-
-									if (diferenciaHorariaEntrada == null) {
-										ingreso = fichadoDTO.getEntrada1();
-									}
-
-									String totalFichadoHoras1 = DateUtils.calcularDiferenciaHorario(ingreso,
-											fichadoDTO.getSalida1());
-									Integer totalFichadoSegundos1 = DateUtils
-											.convertirATotalSegundos(totalFichadoHoras1);
-
-									// Obtengo el total de horas por actividades del día y el empleado pero usando
-									// la consulta a sap y no el mapa
-									Integer totalActividadesEnSegundos = 0;
-									List<HorasPorEmpleadoDTO> totalHorasES1List = this.activityService
-											.obtenerHorasAgrupadasPorFechaEmpleado(new Long(usuarioSap),
-													fechaFichadoyyyyMMdd, fechaFichadoyyyyMMdd,
-													fichadoDTO.getEntrada1(), fichadoDTO.getSalida1(),
-													exclusionesActividadesCalculoHorasNetas);
-									if (totalHorasES1List.size() == 1)
-										totalActividadesEnSegundos = totalHorasES1List.get(0).getDuration();
-
-									Integer nofacturable = totalFichadoSegundos1 - totalActividadesEnSegundos;
-
-									// Armo el nuevo registro de la collection de dias
-									ProjectManagementTimeSheetLineGetDTO timesheetline = generarTimeSheetLine(
-											aplicaComida, fechaFichado, nofacturable, lineNum, ingreso,
-											fichadoDTO.getSalida1(), fichadoDTO.getNormal(), fichadoDTO.getExtra50(),
-											fichadoDTO.getExtra100(), fichadoDTO.getComentarios(),
-											fichadoDTO.getEntrada1(), fichadoDTO.getTarde(), false,
-											pagoHorasProductivas);
-
-									timesheet.getLineas().add(timesheetline);
-
-									////////////////
-									// Armo el segundo par de entrada/salida
-									////////////////
-
-									// El total de fichado lo obtengo de la diferencia entre la primera
-									// entrada/salida
-									String totalFichadoHoras2 = DateUtils.calcularDiferenciaHorario(
-											fichadoDTO.getEntrada2(), fichadoDTO.getSalida2());
-									Integer totalFichadoSegundos2 = DateUtils
-											.convertirATotalSegundos(totalFichadoHoras2);
-
-									Integer totalActividadesEnSegundos2 = 0;
-									List<HorasPorEmpleadoDTO> totalHorasES2List = this.activityService
-											.obtenerHorasAgrupadasPorFechaEmpleado(new Long(usuarioSap),
-													fechaFichadoyyyyMMdd, fechaFichadoyyyyMMdd,
-													fichadoDTO.getEntrada2(), fichadoDTO.getSalida2(),
-													exclusionesActividadesCalculoHorasNetas);
-									if (totalHorasES2List.size() == 1)
-										totalActividadesEnSegundos2 = totalHorasES2List.get(0).getDuration();
-
-									Integer nofacturable2 = totalFichadoSegundos2 - totalActividadesEnSegundos2;
-
-									// Armo el nuevo registro de la collection de dias
-									ProjectManagementTimeSheetLineGetDTO timesheetline2 = generarTimeSheetLine(
-											aplicaComida, fechaFichado, nofacturable2, lineNum + 1,
-											fichadoDTO.getEntrada2(), fichadoDTO.getSalida2(), null, null, null, null,
-											fichadoDTO.getEntrada2(), null, true, pagoHorasProductivas);
-
-									timesheet.getLineas().add(timesheetline2);
-
-									// Despues de agregar la linea a la collecion pongo el objeto en el mapa
-									mapaEmpleadoPeriodo.put(entryMapCabecera, timesheet);
-
-								} else {
-
-									String diferenciaHorariaEntrada = DateUtils.calcularDiferenciaHorario(
-											fichadoDTO.getEntrada1(), horarioIngresoEmpleado);
-
-									String ingreso = horarioIngresoEmpleado;
-
-									if (diferenciaHorariaEntrada == null) {
-										ingreso = fichadoDTO.getEntrada1();
-									}
-
-									// Si tengo un solo par de entrada/salida uso el mapa creado con la sumatoria
-									// general
-									String totalFichadoHoras = DateUtils.calcularDiferenciaHorario(ingreso,
-											fichadoDTO.getSalida1());
-									Integer totalFichadoSegundos = DateUtils.convertirATotalSegundos(totalFichadoHoras);
-
-									// Obtengo el total de horas por actividades del día y el empleado
-									Integer totalActividadesEnSegundosD = horasPorEmpleadoDTO != null
-											? horasPorEmpleadoDTO.getDuration()
-											: null;
-									Integer totalActividadesEnSegundos = 0;
-									if (totalActividadesEnSegundosD != null)
-										totalActividadesEnSegundos = totalActividadesEnSegundosD.intValue();
-
-									Integer nofacturableSegundos = totalFichadoSegundos - totalActividadesEnSegundos;
-
-									// Armo el nuevo registro de la collection de dias
-									ProjectManagementTimeSheetLineGetDTO timesheetline = generarTimeSheetLine(
-											aplicaComida, fechaFichado, nofacturableSegundos, lineNum, ingreso,
-											fichadoDTO.getSalida1(), fichadoDTO.getNormal(), fichadoDTO.getExtra50(),
-											fichadoDTO.getExtra100(), fichadoDTO.getComentarios(),
-											fichadoDTO.getEntrada1(), fichadoDTO.getTarde(), false,
-											pagoHorasProductivas);
-
-									timesheet.getLineas().add(timesheetline);
-
-									// Despues de agregar la linea a la collecion pongo el objeto en el mapa
-									mapaEmpleadoPeriodo.put(entryMapCabecera, timesheet);
-
-								}
-							}
-						}
+						// Despues de agregar la linea a la collecion pongo el objeto en el mapa
+						mapaEmpleadoPeriodo.put(entryMapCabecera, timesheet);
 
 					} else {
-						errores.put("Legajo " + registroEmpleadoDTO.getEmpleado().getLegajo() + " Fecha "
-								+ fichadoDTO.getDia(), "Horarios de Entrada y Salida incompletos");
+
+						String diferenciaHorariaEntrada = DateUtils.calcularDiferenciaHorario(fichadoDTO.getEntrada1(),
+								horarioEntradaEmpleado);
+
+						String entrada = horarioEntradaEmpleado;
+
+						if (diferenciaHorariaEntrada == null) {
+							entrada = fichadoDTO.getEntrada1();
+						}
+
+						// Si tengo un solo par de entrada/salida uso el mapa creado con la sumatoria
+						// general
+						String totalFichadoHoras = DateUtils.calcularDiferenciaHorario(entrada,
+								fichadoDTO.getSalida1());
+						Integer totalFichadoSegundos = DateUtils.convertirATotalSegundos(totalFichadoHoras);
+
+						// Obtengo el total de horas por actividades del día y el empleado
+						Integer totalActividadesEnSegundosD = horasPorEmpleadoDTO != null
+								? horasPorEmpleadoDTO.getDuration()
+								: null;
+						Integer totalActividadesEnSegundos = 0;
+						if (totalActividadesEnSegundosD != null)
+							totalActividadesEnSegundos = totalActividadesEnSegundosD.intValue();
+
+						Integer nofacturableSegundos = totalFichadoSegundos - totalActividadesEnSegundos;
+
+						// Armo el nuevo registro de la collection de dias
+						ProjectManagementTimeSheetLineGetDTO timesheetline = generarTimeSheetLine(aplicaComida,
+								fechaFichado, nofacturableSegundos, lineNum, entrada, fichadoDTO.getSalida1(),
+								fichadoDTO.getNormal(), fichadoDTO.getExtra50(), fichadoDTO.getExtra100(),
+								fichadoDTO.getComentarios(), fichadoDTO.getEntrada1(), fichadoDTO.getTarde(), false,
+								pagoHorasProductivas);
+
+						timesheet.getLineas().add(timesheetline);
+
+						// Despues de agregar la linea a la collecion pongo el objeto en el mapa
+						mapaEmpleadoPeriodo.put(entryMapCabecera, timesheet);
+
 					}
 				}
-			} else {
-				errores.put("Legajo " + registroEmpleadoDTO.getEmpleado().getLegajo(),
-						"No se procesa ya que esta no tiene mapeado usuario en sap");
 			}
 		}
 
@@ -508,25 +841,11 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 
 	}
 
-	private boolean buscarFechaHoraRepetida(Date fechaFichado, String horaFichadoIngreso,
-			ProjectManagementTimeSheetLineGetDTO x) {
-		boolean coincideFecha = DateUtils.convertirSinTimeZome(x.getDate())
-				.equals(DateUtils.toString(fechaFichado, "dd/MM/yyyy"));
-		boolean coincideHorario = x.getHoraFichado().equals(horaFichadoIngreso);
-		return coincideFecha && coincideHorario;
-	}
-
 	private ProjectManagementTimeSheetLineGetDTO generarTimeSheetLine(boolean aplicaComida, Date fechaFichado,
 			Integer nofacturableSegundos, Long lineNum, String entrada1, String salida1, String normal, String extra50,
 			String extra100, String comentarios, String horaFichado, String tarde, boolean segundoRegistro,
 			double pagarHorasProductivas) {
 		ProjectManagementTimeSheetLineGetDTO timesheetline = new ProjectManagementTimeSheetLineGetDTO();
-
-		String codigo = "";
-
-		if (StringUtils.isNotBlank(comentarios)) {
-			codigo = comentarios.split("-")[0].trim();
-		}
 
 		timesheetline.setDate(DateUtils.toString(fechaFichado, "yyyy-MM-dd"));
 
@@ -547,10 +866,13 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 		timesheetline.setPagarHorasProductivas(String.valueOf(pagarHorasProductivas));
 
 		// Obtengo las claves de ferido e injustificado
-		List<String> feriados = Arrays.asList(licenciasFeriado.split(","));
-		List<String> injustificados = Arrays.asList(licenciasNoJustificada.split(","));
+		Set<String> feriados = new HashSet(Arrays.asList(licenciasFeriado.split(",")));
+		Set<String> injustificados = new HashSet(Arrays.asList(licenciasNoJustificada.split(",")));
 
-		if (!feriados.contains(codigo) && !injustificados.contains(codigo)) {
+		boolean esFeriado = FichadoUtils.isComentarioValido(feriados, comentarios);
+		boolean esInjustificado = FichadoUtils.isComentarioValido(injustificados, comentarios);
+
+		if (!esFeriado && !esInjustificado) {
 			// Si no es feriado ni tampoco injustificada, son normales y tambien cargo las
 			// extras al 50 y al 100
 			timesheetline.setHorasNormales(normal);
@@ -560,17 +882,17 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 
 			// Si es feriado o injustificada
 
-			if (feriados.contains(codigo)) {
+			if (esFeriado) {
 				// Si es feriado, cargo las horas de feriado
 				timesheetline.setHorasFeriado(normal);
-			} else if (injustificados.contains(comentarios)) {
+			} else if (esInjustificado) {
 				// Si es injustificado, cargo las horas de injustificadas
 				timesheetline.setHorasInjustificadas(normal);
 			}
 
 			// Si es feriado y trabajo horas extras, tomo las horas extras como horas extras
 			// de feriado
-			if (feriados.contains(codigo) && StringUtils.isNotBlank(extra100)) {
+			if (esFeriado && StringUtils.isNotBlank(extra100)) {
 				// Marco las horas extras como feriado
 				timesheetline.setHorasExtrasFeriados(extra100);
 			}
@@ -586,7 +908,7 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 			timesheetline.setComida("No");
 
 			// Sino hay ausentismo, entonces reviso si va la comida o no.
-			if (StringUtils.isBlank(codigo) || (feriados.contains(codigo) && StringUtils.isNotBlank(extra100)))
+			if (StringUtils.isBlank(comentarios) || (esFeriado && StringUtils.isNotBlank(extra100)))
 				timesheetline.setComida(aplicaComida ? "Si" : "No");
 		}
 
@@ -594,32 +916,29 @@ public class NovedadesFichadoServiceImpl extends AbstractSapService implements N
 		return timesheetline;
 	}
 
-	private String generarEntryMapa(String usuarioSap, String dia) {
-		return usuarioSap + "-" + dia;
-	}
+	private Map<String, Boolean> getCodigosAusentismo() {
 
-	private static String getCellValue(Cell cell) {
-		if (cell == null)
-			return "";
-		switch (cell.getCellType()) {
-		case STRING:
-			return cell.getStringCellValue();
-		case NUMERIC:
-			if (DateUtil.isCellDateFormatted(cell)) {
-				return new SimpleDateFormat("dd/MM/yyyy").format(cell.getDateCellValue());
+		String sql = "select actType, chargeable from pmc5";
+
+		Map<String, Boolean> codigos = new HashMap<String, Boolean>();
+
+		try (Connection conn = sqlConnection.getConnection();
+				PreparedStatement stmt = conn.prepareStatement(sql);
+				ResultSet rs = stmt.executeQuery()) {
+
+			while (rs.next()) {
+				String codigo = rs.getString("actType");
+				Boolean justificado = rs.getString("chargeable").equals("Y");
+				codigos.put(codigo, justificado);
 			}
-			return String.valueOf((int) cell.getNumericCellValue());
-		default:
-			return "";
-		}
-	}
 
-	private static boolean isRowEmpty(Row row) {
-		for (Cell cell : row) {
-			if (cell != null && cell.getCellType() != CellType.BLANK && !cell.getStringCellValue().trim().equals(""))
-				return false;
+			sqlConnection.getConnection().close();
+
+		} catch (Exception e) {
+			e.printStackTrace();
 		}
-		return true;
+
+		return codigos;
 	}
 
 }

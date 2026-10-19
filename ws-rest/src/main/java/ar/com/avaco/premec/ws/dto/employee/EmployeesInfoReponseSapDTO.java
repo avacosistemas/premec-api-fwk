@@ -6,6 +6,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class EmployeesInfoReponseSapDTO {
 
+	@JsonProperty("empID")
+	private Long idEmpleado;
+
 	@JsonProperty("LastName")
 	private String lastName;
 
@@ -81,6 +84,14 @@ public class EmployeesInfoReponseSapDTO {
 
 	public void setFirstName(String firstName) {
 		this.firstName = firstName;
+	}
+
+	public Long getIdEmpleado() {
+		return idEmpleado;
+	}
+
+	public void setIdEmpleado(Long idEmpleado) {
+		this.idEmpleado = idEmpleado;
 	}
 
 }
