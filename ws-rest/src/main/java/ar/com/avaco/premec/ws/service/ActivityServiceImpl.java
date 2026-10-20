@@ -107,7 +107,7 @@ public class ActivityServiceImpl extends AbstractSapService implements ActivityS
 			sql.append(" LEFT JOIN ( ")
 			   .append("    SELECT ")
 			   .append("        AttendEmpl, ")
-			   .append("        COUNT(*) AS cantidadActividades, ")
+			   .append("        SUM(CASE WHEN U_Valoracion IS NOT NULL THEN 1 ELSE 0 END) AS cantidadActividades, ")
 			   .append("        SUM(CASE WHEN U_Valoracion = 'MB' THEN 1 ELSE 0 END) AS cantMB, ")
 			   .append("        SUM(CASE WHEN U_Valoracion = 'B' THEN 1 ELSE 0 END) AS cantB, ")
 			   .append("        SUM(CASE WHEN U_Valoracion = 'R' THEN 1 ELSE 0 END) AS cantR, ")
@@ -115,6 +115,9 @@ public class ActivityServiceImpl extends AbstractSapService implements ActivityS
 			   .append("        SUM(CASE WHEN U_Valoracion IS NULL THEN 1 ELSE 0 END) AS cantSV ")
 			   .append("    FROM OCLG ")
 			   .append("    WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ");
+		   sql.append("    AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ");
+		   sql.append("    AND CAST(U_estado AS NVARCHAR(MAX)) IS NOT NULL ");
+		   sql.append("    AND CAST(U_estado AS NVARCHAR(MAX)) <> 'Pendiente' ");
 		   
 		   
 			List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));

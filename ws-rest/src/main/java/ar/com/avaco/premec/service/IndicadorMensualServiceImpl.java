@@ -102,6 +102,9 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 				.append(" LEFT JOIN OCRD BP ON BP.CardCode = O.CardCode ")
 				.append(" LEFT JOIN OHEM E ON E.empID = O.AttendEmpl ")
 				.append(" WHERE O.U_Valoracion = 'M' ")
+				.append(" AND CAST(O.U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ")
+				.append(" AND CAST(O.U_estado AS NVARCHAR(MAX)) IS NOT NULL ")
+				.append(" AND CAST(O.U_estado AS NVARCHAR(MAX)) <> 'Pendiente' ")
 				.append(" AND O.recontact >= '{fechaDesde}' ")
 				.append(" AND O.recontact < '{fechaHasta}' ");
 
@@ -276,7 +279,7 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 
 	        .append("     SELECT ")
 	        .append("         AttendEmpl, ")
-	        .append("         COUNT(*) AS cantidadActividades, ")
+	        .append("         SUM(CASE WHEN U_Valoracion IS NOT NULL THEN 1 ELSE 0 END) AS cantidadActividades, ")
 
 	        .append("         SUM(CASE ")
 	        .append("             WHEN U_Valoracion = 'MB' THEN 1 ")
@@ -306,7 +309,9 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 	        .append("     FROM OCLG ")
 
 	        .append("     WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ")
-	        .append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ");
+	        .append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ")
+	        .append("     AND CAST(U_estado AS NVARCHAR(MAX)) IS NOT NULL ")
+	        .append("     AND CAST(U_estado AS NVARCHAR(MAX)) <> 'Pendiente' ");
 
 	    List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
 
@@ -532,7 +537,7 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 	        .append(" LEFT JOIN ( ")
 	        .append("     SELECT ")
 	        .append("         AttendEmpl, ")
-	        .append("         COUNT(*) AS cantidadActividades, ")
+	        .append("         SUM(CASE WHEN U_Valoracion IS NOT NULL THEN 1 ELSE 0 END) AS cantidadActividades, ")
 	        .append("         SUM(CASE WHEN U_Valoracion = 'MB' THEN 1 ELSE 0 END) AS cantMB, ")
 	        .append("         SUM(CASE WHEN U_Valoracion = 'B' THEN 1 ELSE 0 END) AS cantB, ")
 	        .append("         SUM(CASE WHEN U_Valoracion = 'R' THEN 1 ELSE 0 END) AS cantR, ")
@@ -540,7 +545,9 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 	        .append("         SUM(CASE WHEN U_Valoracion IS NULL THEN 1 ELSE 0 END) AS cantSV ")
 	        .append("     FROM OCLG ")
 	        .append("     WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ")
-	        .append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ");
+	        .append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ")
+	        .append("     AND CAST(U_estado AS NVARCHAR(MAX)) IS NOT NULL ")
+	        .append("     AND CAST(U_estado AS NVARCHAR(MAX)) <> 'Pendiente' ");
 
 	    List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
 
@@ -767,7 +774,7 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 				.append(" INNER JOIN OHEM E ON cab.UserID = E.empID ")
 				.append(" LEFT JOIN ( ")
 				.append("   SELECT AttendEmpl, ")
-				.append("          COUNT(*) AS cantidadActividades, ")
+				.append("          SUM(CASE WHEN U_Valoracion IS NOT NULL THEN 1 ELSE 0 END) AS cantidadActividades, ")
 				.append("          SUM(CASE WHEN U_Valoracion = 'MB' THEN 1 ELSE 0 END) AS cantMB, ")
 				.append("          SUM(CASE WHEN U_Valoracion = 'B' THEN 1 ELSE 0 END) AS cantB, ")
 				.append("          SUM(CASE WHEN U_Valoracion = 'R' THEN 1 ELSE 0 END) AS cantR, ")
@@ -775,7 +782,9 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 				.append("          SUM(CASE WHEN U_Valoracion IS NULL THEN 1 ELSE 0 END) AS cantSV ")
 				.append("   FROM OCLG ")
 				.append("   WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ")
-				.append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ");
+				.append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ")
+				.append("     AND CAST(U_estado AS NVARCHAR(MAX)) IS NOT NULL ")
+				.append("     AND CAST(U_estado AS NVARCHAR(MAX)) <> 'Pendiente' ");
 
 		List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
 		for (String exclusion : exclusionesList) {
@@ -902,7 +911,7 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 		sql.append("    LEFT JOIN ( ");
 		sql.append("        SELECT ");
 		sql.append("            AttendEmpl, ");
-		sql.append("            COUNT(*) AS cantidadActividades, ");
+		sql.append("            SUM(CASE WHEN U_Valoracion IS NOT NULL THEN 1 ELSE 0 END) AS cantidadActividades, ");
 		sql.append("            SUM(CASE WHEN U_Valoracion = 'MB' THEN 1 ELSE 0 END) AS cantMB, ");
 		sql.append("            SUM(CASE WHEN U_Valoracion = 'B'  THEN 1 ELSE 0 END) AS cantB, ");
 		sql.append("            SUM(CASE WHEN U_Valoracion = 'R'  THEN 1 ELSE 0 END) AS cantR, ");
@@ -911,6 +920,8 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 		sql.append("        FROM OCLG ");
 		sql.append("        WHERE Recontact BETWEEN '{fechaDesde}' AND '{fechaHasta}' ");
 		sql.append("     AND CAST(U_categoria AS NVARCHAR(MAX)) = 'Mantenimiento-reparacion' ");
+		sql.append("     AND CAST(U_estado AS NVARCHAR(MAX)) IS NOT NULL ");
+		sql.append("     AND CAST(U_estado AS NVARCHAR(MAX)) <> 'Pendiente' ");
 
 		List<String> exclusionesList = Lists.newArrayList(exclusiones.split(","));
 		for (String exclusion : exclusionesList) {
