@@ -30,6 +30,8 @@ public class RegistroInformeMensualGeneralDTO {
 
 	private String porcentajeValoracion;
 
+	private IndicadorAusentismoDTO ausentismo;
+
 	public String getFacturables() {
 		return facturables;
 	}
@@ -140,6 +142,14 @@ public class RegistroInformeMensualGeneralDTO {
 
 	public void setPorcentajeValoracion(String porcentajeValoracion) {
 		this.porcentajeValoracion = porcentajeValoracion;
+	}
+
+	public IndicadorAusentismoDTO getAusentismo() {
+		return ausentismo;
+	}
+
+	public void setAusentismo(IndicadorAusentismoDTO ausentismo) {
+		this.ausentismo = ausentismo;
 	}
 
 }

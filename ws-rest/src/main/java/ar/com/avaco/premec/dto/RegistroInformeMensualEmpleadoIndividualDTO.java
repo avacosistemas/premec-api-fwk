@@ -40,6 +40,8 @@ public class RegistroInformeMensualEmpleadoIndividualDTO {
 
 	private String cumplimientoObjetivo;
 
+	private IndicadorAusentismoDTO ausentismo;
+
 	public Long getLegajo() {
 		return legajo;
 	}
@@ -190,6 +192,14 @@ public class RegistroInformeMensualEmpleadoIndividualDTO {
 
 	public void setPorcentajeValoracion(String porcentajeValoracion) {
 		this.porcentajeValoracion = porcentajeValoracion;
+	}
+
+	public IndicadorAusentismoDTO getAusentismo() {
+		return ausentismo;
+	}
+
+	public void setAusentismo(IndicadorAusentismoDTO ausentismo) {
+		this.ausentismo = ausentismo;
 	}
 
 }

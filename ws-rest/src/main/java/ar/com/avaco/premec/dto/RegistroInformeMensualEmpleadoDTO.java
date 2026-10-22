@@ -2,6 +2,8 @@ package ar.com.avaco.premec.dto;
 
 public class RegistroInformeMensualEmpleadoDTO {
 
+	private IndicadorAusentismoDTO ausentismo;
+
 	private Long legajo;
 
 	private Long usuarioSap;
@@ -60,6 +62,14 @@ public class RegistroInformeMensualEmpleadoDTO {
 	private String gratificacionesAumentos;
 
 	private String sueldoNeto;
+
+	public IndicadorAusentismoDTO getAusentismo() {
+		return ausentismo;
+	}
+
+	public void setAusentismo(IndicadorAusentismoDTO ausentismo) {
+		this.ausentismo = ausentismo;
+	}
 
 	public String getSueldoNeto() {
 		return sueldoNeto;

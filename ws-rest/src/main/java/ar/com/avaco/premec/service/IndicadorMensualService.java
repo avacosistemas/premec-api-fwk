@@ -1,6 +1,9 @@
 package ar.com.avaco.premec.service;
 
 import java.util.List;
+import ar.com.avaco.premec.dto.AusentismoAgrupadoDTO;
+import ar.com.avaco.premec.dto.AusentismoFilterDTO;
+import ar.com.avaco.premec.dto.TipoAusentismoDTO;
 
 import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoIndividualDTO;
@@ -8,6 +11,8 @@ import ar.com.avaco.premec.dto.RegistroInformeMensualGeneralDTO;
 import ar.com.avaco.premec.ws.dto.actividad.ActivityValoracionSapDTO;
 
 public interface IndicadorMensualService {
+	List<AusentismoAgrupadoDTO> getAusentismos(AusentismoFilterDTO filter);
+	List<TipoAusentismoDTO> getTiposAusentismo();
 
 	RegistroInformeMensualGeneralDTO getIndicadorMensualGeneral(String mes, String anio);
 

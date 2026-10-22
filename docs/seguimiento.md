@@ -42,6 +42,7 @@ Estados: **Inventariada** = localizada en código; **En validación** = contrast
 - Confirmar con negocio si debe actualizarse un único timesheet por persona y mes, qué sucede ante duplicados/ausentes, si los campos recibidos por el POST se validan contra el preview y si deben actualizarse también `novedades` u otros campos.
 - Ajustes aplicados: el total de actividades del cierre ya no suma registros sin valoración (`U_Valoracion IS NULL`); el subquery filtra `U_categoria = 'Mantenimiento-reparacion'` y solo considera registros donde `U_estado` no es nulo ni igual a `Pendiente`. Las comparaciones convierten los campos de texto a `NVARCHAR(MAX)` por su tipo `ntext`. Validar el resultado funcional con datos representativos.
 - Se extendió el mismo criterio a `IndicadorMensualServiceImpl`: agregados general, grupal/individual y consultas de detalle de valoraciones negativas filtran la categoría y excluyen estados nulos o `Pendiente`. En agregados, `cantidadActividades` excluye `U_Valoracion IS NULL`; `cantSV` se conserva como campo informativo.
+- El objeto `ausentismo` en los indicadores general, grupal e individual incluye horas totales, horas ausentes, porcentaje de ausentismo y horas ausentes justificadas/injustificadas. Estas últimas se clasifican buscando el prefijo de `U_tipoausentismo` en `PMC5.ActType`; `Chargeable='Y'` suma como justificadas y `'N'` como injustificadas. Los registros sin coincidencia o con otro valor de `Chargeable` permanecen en las horas ausentes totales y no se asignan a esos subtotales.
 
 ## Cómo mantenerlo
 

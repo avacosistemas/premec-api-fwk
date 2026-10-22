@@ -8,9 +8,14 @@ import java.sql.ResultSet;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang.StringUtils;
@@ -24,6 +29,11 @@ import com.ibm.icu.util.Calendar;
 import ar.com.avaco.fwk.core.utils.DateUtils;
 import ar.com.avaco.premec.domain.GrupoEmpleado;
 import ar.com.avaco.premec.domain.UsuarioPremec;
+import ar.com.avaco.premec.dto.IndicadorAusentismoDTO;
+import ar.com.avaco.premec.dto.AusentismoDTO;
+import ar.com.avaco.premec.dto.AusentismoAgrupadoDTO;
+import ar.com.avaco.premec.dto.AusentismoFilterDTO;
+import ar.com.avaco.premec.dto.TipoAusentismoDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualEmpleadoIndividualDTO;
 import ar.com.avaco.premec.dto.RegistroInformeMensualGeneralDTO;
@@ -35,6 +45,167 @@ import ar.com.avaco.premec.ws.service.SQLServerConnection;
 
 @Service("indicadorMensualService")
 public class IndicadorMensualServiceImpl extends AbstractSapService implements IndicadorMensualService {
+
+	@Override
+	public List<TipoAusentismoDTO> getTiposAusentismo() {
+		List<TipoAusentismoDTO> resultado = new ArrayList<>();
+		String sql = "SELECT DISTINCT LTRIM(RTRIM(ActType)) AS codigo, LaborItem AS nombre, Chargeable "
+				+ "FROM PMC5 WHERE NULLIF(LTRIM(RTRIM(ActType)), '') IS NOT NULL "
+				+ "ORDER BY LTRIM(RTRIM(ActType))";
+		try (Connection conn = sqlcon.getConnection();
+				PreparedStatement stmt = conn.prepareStatement(sql);
+				ResultSet rs = stmt.executeQuery()) {
+			while (rs.next()) {
+				TipoAusentismoDTO tipo = new TipoAusentismoDTO();
+				tipo.setCodigo(rs.getString("codigo"));
+				tipo.setNombre(rs.getString("nombre"));
+				String chargeable = rs.getString("Chargeable");
+				tipo.setJustificado(chargeable == null ? null : "Y".equalsIgnoreCase(chargeable.trim()));
+				resultado.add(tipo);
+			}
+		} catch (Exception e) {
+			throw new RuntimeException("No se pudieron consultar los tipos de ausentismo", e);
+		}
+		return resultado;
+	}
+
+	@Override
+	public List<AusentismoAgrupadoDTO> getAusentismos(AusentismoFilterDTO filter) {
+		Map<Long, AusentismoAgrupadoDTO> porEmpleado = new LinkedHashMap<>();
+		List<Long> idsSap = null;
+		if (filter.getEmpleadosIds() != null && !filter.getEmpleadosIds().isEmpty()) {
+			idsSap = usuarioPremecService.getByIds(filter.getEmpleadosIds()).stream()
+					.filter(Objects::nonNull)
+					.map(u -> parseUsuarioSap(u.getUsuariosap()))
+					.filter(Objects::nonNull).distinct().collect(Collectors.toList());
+			if (idsSap.isEmpty()) return new ArrayList<>();
+		}
+		StringBuilder sql = new StringBuilder("WITH base AS (SELECT cab.UserID AS idEmpleado, "
+				+ "LTRIM(RTRIM(CONCAT(E.firstName, ' ', E.lastName))) AS empleado, det.[Date] AS fecha, "
+				+ "tipo.LaborItem AS tipoAusentismo, tipo.Chargeable AS chargeable, "
+				+ "ISNULL(det.EffectHr, 0) AS horas, "
+				+ "CASE WHEN tipo.LaborItem IS NOT NULL ");
+		if (StringUtils.isNotBlank(filter.getTipoAusentismo())) sql.append("AND tipo.LaborItem LIKE ? ");
+		if ("justificadas".equalsIgnoreCase(filter.getJustificacion())) sql.append("AND tipo.Chargeable = 'Y' ");
+		if ("injustificadas".equalsIgnoreCase(filter.getJustificacion())) sql.append("AND tipo.Chargeable = 'N' ");
+		sql.append("THEN 1 ELSE 0 END AS incluirAusencia FROM OTSH cab "
+				+ "INNER JOIN TSH1 det ON det.AbsEntry = cab.AbsEntry "
+				+ "INNER JOIN OHEM E ON cab.UserID = E.empID "
+				+ "CROSS APPLY (SELECT NULLIF(LTRIM(RTRIM(CAST(det.U_tipoausentismo AS NVARCHAR(MAX)))), '') AS TipoAusentismo) aus "
+				+ "OUTER APPLY (SELECT TOP (1) cfg.LaborItem, cfg.Chargeable FROM PMC5 cfg "
+				+ "WHERE aus.TipoAusentismo IS NOT NULL AND NULLIF(LTRIM(RTRIM(cfg.ActType)), '') IS NOT NULL "
+				+ "AND LEFT(aus.TipoAusentismo, LEN(LTRIM(RTRIM(cfg.ActType)))) COLLATE SQL_Latin1_General_CP850_CI_AS = LTRIM(RTRIM(cfg.ActType)) COLLATE SQL_Latin1_General_CP850_CI_AS "
+				+ "ORDER BY LEN(LTRIM(RTRIM(cfg.ActType))) DESC) tipo WHERE 1=1 ");
+		if (StringUtils.isNotBlank(filter.getFechaDesde())) sql.append("AND det.[Date] >= ? ");
+		if (StringUtils.isNotBlank(filter.getFechaHasta())) sql.append("AND det.[Date] < ? ");
+		if (idsSap != null) sql.append("AND cab.UserID IN (").append(idsSap.stream().map(x -> "?").collect(Collectors.joining(","))).append(") ");
+		sql.append("), resumen AS (SELECT idEmpleado, empleado, SUM(horas) AS horasTotales, "
+				+ "SUM(CASE WHEN incluirAusencia = 1 THEN horas ELSE 0 END) AS horasAusentes, "
+				+ "SUM(CASE WHEN incluirAusencia = 1 AND chargeable = 'Y' THEN horas ELSE 0 END) AS horasJustificadas, "
+				+ "SUM(CASE WHEN incluirAusencia = 1 AND chargeable = 'N' THEN horas ELSE 0 END) AS horasInjustificadas "
+				+ "FROM base GROUP BY idEmpleado, empleado "
+				+ "HAVING SUM(CASE WHEN incluirAusencia = 1 THEN horas ELSE 0 END) > 0), "
+				+ "empleados_pagina AS (SELECT resumen.*, COUNT(*) OVER() AS totalRegistros, "
+				+ "ROW_NUMBER() OVER (ORDER BY ");
+		String orderBy;
+		if (filter.getIdx() == null) orderBy = "empleado ASC";
+		else {
+			switch (filter.getIdx()) {
+			case "idEmpleado": orderBy = "idEmpleado"; break;
+			case "empleado": orderBy = "empleado"; break;
+			case "horasTotales": orderBy = "horasTotales"; break;
+			case "horasAusentes": orderBy = "horasAusentes"; break;
+			default: orderBy = "empleado";
+			}
+			orderBy += Boolean.TRUE.equals(filter.getAsc()) ? " ASC" : " DESC";
+		}
+		int page = filter.getPage() == null || filter.getPage() < 1 ? 1 : filter.getPage();
+		int pageSize = filter.getPageSize() == null || filter.getPageSize() < 1 ? 20 : filter.getPageSize();
+		sql.append(orderBy).append(") AS rn FROM resumen) "
+				+ "SELECT ep.totalRegistros, ep.idEmpleado, ep.empleado, ep.horasTotales, ep.horasAusentes, "
+				+ "ep.horasJustificadas, ep.horasInjustificadas, b.fecha, b.tipoAusentismo, b.chargeable, b.horas "
+				+ "FROM empleados_pagina ep INNER JOIN base b ON b.idEmpleado = ep.idEmpleado AND b.incluirAusencia = 1 "
+				+ "WHERE ep.rn > ? AND ep.rn <= ? ORDER BY ep.rn, b.fecha ASC");
+		try (Connection conn = sqlcon.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+			int p = 1;
+			if (StringUtils.isNotBlank(filter.getTipoAusentismo())) stmt.setString(p++, "%" + filter.getTipoAusentismo().trim() + "%");
+			if (StringUtils.isNotBlank(filter.getFechaDesde())) stmt.setDate(p++, java.sql.Date.valueOf(parseFechaAusentismo(filter.getFechaDesde())));
+			if (StringUtils.isNotBlank(filter.getFechaHasta())) stmt.setDate(p++, java.sql.Date.valueOf(parseFechaAusentismo(filter.getFechaHasta()).plusDays(1)));
+			if (idsSap != null) for (Long id : idsSap) stmt.setLong(p++, id);
+			stmt.setInt(p++, (page - 1) * pageSize);
+			stmt.setInt(p++, page * pageSize);
+			try (ResultSet rs = stmt.executeQuery()) {
+				while (rs.next()) {
+					Long idEmpleado = rs.getLong("idEmpleado");
+					AusentismoAgrupadoDTO dto = porEmpleado.get(idEmpleado);
+					if (dto == null) {
+						BigDecimal total = valorDecimal(rs.getBigDecimal("horasTotales"));
+						BigDecimal ausentes = valorDecimal(rs.getBigDecimal("horasAusentes"));
+						BigDecimal justificadas = valorDecimal(rs.getBigDecimal("horasJustificadas"));
+						BigDecimal injustificadas = valorDecimal(rs.getBigDecimal("horasInjustificadas"));
+						dto = new AusentismoAgrupadoDTO();
+						dto.setIdEmpleado(idEmpleado);
+						dto.setEmpleado(rs.getString("empleado"));
+						dto.setHorasTotales(formatearHorasAusentes(total));
+						dto.setHorasAusentes(formatearHorasAusentes(ausentes));
+						dto.setHorasJustificadas(formatearHorasAusentes(justificadas));
+						dto.setHorasInjustificadas(formatearHorasAusentes(injustificadas));
+						dto.setPorcentajeAusentismo(porcentajeAusentismo(ausentes, total));
+						dto.setPorcentajeJustificado(porcentajeAusentismo(justificadas, total));
+						dto.setPorcentajeInjustificado(porcentajeAusentismo(injustificadas, total));
+						dto.setTotalRegistros(rs.getInt("totalRegistros"));
+						porEmpleado.put(idEmpleado, dto);
+					}
+					AusentismoDTO detalle = new AusentismoDTO();
+					detalle.setFecha(rs.getDate("fecha").toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+					detalle.setTipoAusentismo(rs.getString("tipoAusentismo"));
+					String chargeable = rs.getString("chargeable");
+					detalle.setJustificado(chargeable == null ? null : "Y".equalsIgnoreCase(chargeable.trim()));
+					detalle.setHorasAusentes(formatearHorasAusentes(rs.getBigDecimal("horas")));
+					dto.getDetalle().add(detalle);
+				}
+			}
+		} catch (Exception e) {
+			throw new RuntimeException("No se pudo consultar el listado de ausentismos", e);
+		}
+		return new ArrayList<>(porEmpleado.values());
+	}
+
+	private BigDecimal valorDecimal(BigDecimal valor) {
+		return valor == null ? BigDecimal.ZERO : valor;
+	}
+
+	private Long parseUsuarioSap(String usuarioSap) {
+		if (StringUtils.isBlank(usuarioSap)) return null;
+		try {
+			return Long.valueOf(usuarioSap.trim());
+		} catch (NumberFormatException e) {
+			return null;
+		}
+	}
+
+	private BigDecimal porcentajeAusentismo(BigDecimal horas, BigDecimal total) {
+		return total.compareTo(BigDecimal.ZERO) == 0 ? BigDecimal.ZERO
+				: horas.multiply(BigDecimal.valueOf(100)).divide(total, 2, RoundingMode.HALF_UP);
+	}
+
+	private LocalDate parseFechaAusentismo(String fecha) {
+		try {
+			return LocalDate.parse(fecha, java.time.format.DateTimeFormatter.ofPattern("dd/MM/uuuu")
+					.withResolverStyle(java.time.format.ResolverStyle.STRICT));
+		} catch (java.time.format.DateTimeParseException e) {
+			return LocalDate.parse(fecha);
+		}
+	}
+
+	private String formatearHorasAusentes(BigDecimal horas) {
+		long segundosTotales = (horas == null ? BigDecimal.ZERO : horas)
+				.multiply(BigDecimal.valueOf(3600)).setScale(0, RoundingMode.HALF_UP).longValue();
+		long horasTotales = segundosTotales / 3600;
+		long minutos = (segundosTotales % 3600) / 60;
+		long segundos = segundosTotales % 60;
+		return String.format(java.util.Locale.ROOT, "%02d:%02d:%02d", horasTotales, minutos, segundos);
+	}
 
 	@Autowired
 	private SQLServerConnection sqlcon;
@@ -404,6 +575,10 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 	        e.printStackTrace();
 	    }
 
+	    if (preview != null) {
+	        preview.setAusentismo(agregarAusentismo(obtenerAusentismo(mes, anio, null).values()));
+	    }
+
 	    return preview;
 	}
 	
@@ -667,6 +842,15 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 	        e.printStackTrace();
 	    }
 
+	    if (preview != null && StringUtils.isNotBlank(idUsuarioSap)) {
+	        UsuarioPremec usuarioIndicador = new UsuarioPremec();
+	        usuarioIndicador.setUsuariosap(idUsuarioSap);
+	        Map<Long, IndicadorAusentismoDTO> ausentismo = obtenerAusentismo(mes, anio,
+	                java.util.Collections.singletonList(usuarioIndicador));
+	        preview.setAusentismo(ausentismo.getOrDefault(Long.valueOf(idUsuarioSap),
+	                crearAusentismo(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)));
+	    }
+
 	    return preview;
 	}
 	
@@ -675,8 +859,10 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 			Long idGrupoEmpleado) {
 
 		GrupoEmpleado grupoEmpleado = grupoEmpleadoService.get(idGrupoEmpleado);
-
-		return getIndicadoresByUsuarios(mes, anio, new ArrayList<UsuarioPremec>(grupoEmpleado.getUsuarios()));
+		List<UsuarioPremec> usuarios = new ArrayList<UsuarioPremec>(grupoEmpleado.getUsuarios());
+		List<RegistroInformeMensualEmpleadoIndividualDTO> indicadores = getIndicadoresByUsuarios(mes, anio, usuarios);
+		completarAusentismo(indicadores, obtenerAusentismo(mes, anio, usuarios));
+		return indicadores;
 
 	}
 
@@ -688,8 +874,9 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 				.map(Long::valueOf).collect(Collectors.toList());
 
 		List<UsuarioPremec> byIds = usuarioPremecService.getByIds(listaIds);
-
-		return getIndicadoresByUsuarios(mes, anio, byIds);
+		List<RegistroInformeMensualEmpleadoIndividualDTO> indicadores = getIndicadoresByUsuarios(mes, anio, byIds);
+		completarAusentismo(indicadores, obtenerAusentismo(mes, anio, byIds));
+		return indicadores;
 
 	}
 
@@ -698,8 +885,12 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 			Long idGrupoEmpleado) {
 
 		GrupoEmpleado grupoEmpleado = grupoEmpleadoService.get(idGrupoEmpleado);
-
-		return getIndicadoresByUsuariosAgrupado(mes, anio, new ArrayList<UsuarioPremec>(grupoEmpleado.getUsuarios()));
+		List<UsuarioPremec> usuarios = new ArrayList<UsuarioPremec>(grupoEmpleado.getUsuarios());
+		RegistroInformeMensualEmpleadoIndividualDTO indicador = getIndicadoresByUsuariosAgrupado(mes, anio, usuarios);
+		if (indicador != null) {
+			indicador.setAusentismo(agregarAusentismo(obtenerAusentismo(mes, anio, usuarios).values()));
+		}
+		return indicador;
 
 	}
 
@@ -711,8 +902,11 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 				.map(Long::valueOf).collect(Collectors.toList());
 
 		List<UsuarioPremec> byIds = usuarioPremecService.getByIds(listaIds);
-
-		return getIndicadoresByUsuariosAgrupado(mes, anio, byIds);
+		RegistroInformeMensualEmpleadoIndividualDTO indicador = getIndicadoresByUsuariosAgrupado(mes, anio, byIds);
+		if (indicador != null) {
+			indicador.setAusentismo(agregarAusentismo(obtenerAusentismo(mes, anio, byIds).values()));
+		}
+		return indicador;
 
 	}
 
@@ -1014,6 +1208,118 @@ public class IndicadorMensualServiceImpl extends AbstractSapService implements I
 
 		return preview;
 
+	}
+
+	private Map<Long, IndicadorAusentismoDTO> obtenerAusentismo(String mes, String anio,
+			List<UsuarioPremec> usuarios) {
+		Map<Long, IndicadorAusentismoDTO> resultado = new HashMap<>();
+		List<Long> idsSap = null;
+
+		if (usuarios != null) {
+			Set<Long> idsUnicos = new HashSet<>();
+			for (UsuarioPremec usuario : usuarios) {
+				if (StringUtils.isNotBlank(usuario.getUsuariosap())) {
+					idsUnicos.add(Long.valueOf(usuario.getUsuariosap().trim()));
+				}
+			}
+			idsSap = new ArrayList<>(idsUnicos);
+			if (idsSap.isEmpty()) {
+				return resultado;
+			}
+		}
+
+		LocalDate desde = LocalDate.of(Integer.parseInt(anio), Integer.parseInt(mes), 1);
+		LocalDate hastaExclusivo = desde.plusMonths(1);
+		StringBuilder sql = new StringBuilder();
+		sql.append("SELECT cab.UserID AS usuarioSap, ")
+				.append("ISNULL(SUM(det.EffectHr), 0) AS horasTotales, ")
+				.append("ISNULL(SUM(CASE WHEN NULLIF(LTRIM(RTRIM(CAST(det.U_tipoausentismo AS NVARCHAR(MAX)))), '') IS NOT NULL ")
+				.append("THEN ISNULL(det.EffectHr, 0) ELSE 0 END), 0) AS horasAusencia, ")
+				.append("ISNULL(SUM(CASE WHEN tipo.Chargeable = 'Y' THEN ISNULL(det.EffectHr, 0) ELSE 0 END), 0) AS horasAusenciaJustificadas, ")
+				.append("ISNULL(SUM(CASE WHEN tipo.Chargeable = 'N' THEN ISNULL(det.EffectHr, 0) ELSE 0 END), 0) AS horasAusenciaInjustificadas ")
+				.append("FROM OTSH cab INNER JOIN TSH1 det ON det.AbsEntry = cab.AbsEntry ")
+				.append("CROSS APPLY (SELECT NULLIF(LTRIM(RTRIM(CAST(det.U_tipoausentismo AS NVARCHAR(MAX)))), '') AS TipoAusentismo) aus ")
+				.append("OUTER APPLY (SELECT TOP (1) cfg.Chargeable FROM PMC5 cfg ")
+				.append("WHERE aus.TipoAusentismo IS NOT NULL ")
+				.append("AND NULLIF(LTRIM(RTRIM(cfg.ActType)), '') IS NOT NULL ")
+				.append("AND LEFT(aus.TipoAusentismo, LEN(LTRIM(RTRIM(cfg.ActType)))) COLLATE SQL_Latin1_General_CP850_CI_AS = LTRIM(RTRIM(cfg.ActType)) COLLATE SQL_Latin1_General_CP850_CI_AS ")
+				.append("ORDER BY LEN(LTRIM(RTRIM(cfg.ActType))) DESC) tipo ")
+				.append("WHERE det.[Date] >= ? AND det.[Date] < ? ");
+
+		if (idsSap != null) {
+			sql.append("AND cab.UserID IN (")
+					.append(idsSap.stream().map(id -> "?").collect(Collectors.joining(",")))
+					.append(") ");
+		}
+		sql.append("GROUP BY cab.UserID");
+
+		try (Connection conn = sqlcon.getConnection();
+				PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+			int parametro = 1;
+			stmt.setDate(parametro++, java.sql.Date.valueOf(desde));
+			stmt.setDate(parametro++, java.sql.Date.valueOf(hastaExclusivo));
+			if (idsSap != null) {
+				for (Long idSap : idsSap) {
+					stmt.setLong(parametro++, idSap);
+				}
+			}
+
+			try (ResultSet rs = stmt.executeQuery()) {
+				while (rs.next()) {
+					BigDecimal horasTotales = rs.getBigDecimal("horasTotales");
+					BigDecimal horasAusencia = rs.getBigDecimal("horasAusencia");
+					BigDecimal horasJustificadas = rs.getBigDecimal("horasAusenciaJustificadas");
+					BigDecimal horasInjustificadas = rs.getBigDecimal("horasAusenciaInjustificadas");
+					resultado.put(rs.getLong("usuarioSap"), crearAusentismo(horasTotales, horasAusencia,
+							horasJustificadas, horasInjustificadas));
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return resultado;
+	}
+
+	private void completarAusentismo(List<RegistroInformeMensualEmpleadoIndividualDTO> indicadores,
+			Map<Long, IndicadorAusentismoDTO> ausentismoPorUsuario) {
+		for (RegistroInformeMensualEmpleadoIndividualDTO indicador : indicadores) {
+			IndicadorAusentismoDTO ausentismo = ausentismoPorUsuario.get(indicador.getUsuarioSap());
+			indicador.setAusentismo(ausentismo != null ? ausentismo
+					: crearAusentismo(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+		}
+	}
+
+	private IndicadorAusentismoDTO agregarAusentismo(Iterable<IndicadorAusentismoDTO> ausentismos) {
+		BigDecimal horasTotales = BigDecimal.ZERO;
+		BigDecimal horasAusencia = BigDecimal.ZERO;
+		BigDecimal horasJustificadas = BigDecimal.ZERO;
+		BigDecimal horasInjustificadas = BigDecimal.ZERO;
+		for (IndicadorAusentismoDTO ausentismo : ausentismos) {
+			horasTotales = horasTotales.add(ausentismo.getHorasTotales());
+			horasAusencia = horasAusencia.add(ausentismo.getHorasAusencia());
+			horasJustificadas = horasJustificadas.add(ausentismo.getHorasAusenciaJustificadas());
+			horasInjustificadas = horasInjustificadas.add(ausentismo.getHorasAusenciaInjustificadas());
+		}
+		return crearAusentismo(horasTotales, horasAusencia, horasJustificadas, horasInjustificadas);
+	}
+
+	private IndicadorAusentismoDTO crearAusentismo(BigDecimal horasTotales, BigDecimal horasAusencia,
+			BigDecimal horasJustificadas, BigDecimal horasInjustificadas) {
+		IndicadorAusentismoDTO ausentismo = new IndicadorAusentismoDTO();
+		horasTotales = horasTotales != null ? horasTotales : BigDecimal.ZERO;
+		horasAusencia = horasAusencia != null ? horasAusencia : BigDecimal.ZERO;
+		horasJustificadas = horasJustificadas != null ? horasJustificadas : BigDecimal.ZERO;
+		horasInjustificadas = horasInjustificadas != null ? horasInjustificadas : BigDecimal.ZERO;
+		ausentismo.setHorasTotales(horasTotales.setScale(6, RoundingMode.HALF_UP));
+		ausentismo.setHorasAusencia(horasAusencia.setScale(6, RoundingMode.HALF_UP));
+		ausentismo.setHorasAusenciaJustificadas(horasJustificadas.setScale(6, RoundingMode.HALF_UP));
+		ausentismo.setHorasAusenciaInjustificadas(horasInjustificadas.setScale(6, RoundingMode.HALF_UP));
+		BigDecimal porcentaje = horasTotales.compareTo(BigDecimal.ZERO) == 0
+				? BigDecimal.ZERO
+				: horasAusencia.multiply(BigDecimal.valueOf(100))
+						.divide(horasTotales, 2, RoundingMode.HALF_UP);
+		ausentismo.setPorcentajeAusentismo(porcentaje);
+		return ausentismo;
 	}
 
 }
