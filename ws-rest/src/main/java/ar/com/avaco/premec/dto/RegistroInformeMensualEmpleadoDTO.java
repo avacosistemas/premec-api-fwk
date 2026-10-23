@@ -10,6 +10,8 @@ public class RegistroInformeMensualEmpleadoDTO {
 
 	private String nombre;
 
+	private String llegadasTarde;
+
 	private String facturables;
 
 	private String facturablesHora;
@@ -97,6 +99,14 @@ public class RegistroInformeMensualEmpleadoDTO {
 
 	public String getNombre() {
 		return nombre;
+	}
+
+	public String getLlegadasTarde() {
+		return llegadasTarde;
+	}
+
+	public void setLlegadasTarde(String llegadasTarde) {
+		this.llegadasTarde = llegadasTarde;
 	}
 
 	public void setNombre(String nombre) {

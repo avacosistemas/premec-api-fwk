@@ -11,6 +11,7 @@ public class AusentismoAgrupadoDTO {
 	private String horasAusentes;
 	private String horasJustificadas;
 	private String horasInjustificadas;
+	private String llegadasTarde;
 	private BigDecimal porcentajeAusentismo;
 	private BigDecimal porcentajeJustificado;
 	private BigDecimal porcentajeInjustificado;
@@ -59,6 +60,14 @@ public class AusentismoAgrupadoDTO {
 
 	public String getHorasInjustificadas() {
 		return horasInjustificadas;
+	}
+
+	public String getLlegadasTarde() {
+		return llegadasTarde;
+	}
+
+	public void setLlegadasTarde(String llegadasTarde) {
+		this.llegadasTarde = llegadasTarde;
 	}
 
 	public void setHorasInjustificadas(String horasInjustificadas) {
