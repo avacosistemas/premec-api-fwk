@@ -25,7 +25,7 @@ public class GrupoEmpleadoRestController
 	public ResponseEntity<JSONResponse> listUsuarios() {
 		JSONResponse response = new JSONResponse();
 		try {
-			response.setData(this.service.listUsuarios());
+			response.setData(this.service.listEmpleados());
 			response.setStatus(JSONResponse.OK);
 		} catch (Exception e) {
 			response.setStatus(JSONResponse.ERROR);

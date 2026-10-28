@@ -1,6 +1,8 @@
 package ar.com.avaco.premec.ws.service;
 
 import java.awt.Rectangle;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -23,6 +25,8 @@ import java.util.Optional;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
+import org.apache.pdfbox.io.MemoryUsageSetting;
+import org.apache.pdfbox.multipdf.PDFMergerUtility;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -40,7 +44,9 @@ import ar.com.avaco.fwk.core.utils.DateUtils;
 import ar.com.avaco.fwk.core.utils.NumberUtils;
 import ar.com.avaco.premec.service.UsuarioPremecService;
 import ar.com.avaco.premec.utils.BuscarTextoYStripper;
+import ar.com.avaco.premec.ws.dto.ArchivoDTO;
 import ar.com.avaco.premec.ws.dto.ReciboFilterDTO;
+import ar.com.avaco.premec.ws.dto.ReciboUsuarioFilterDTO;
 import ar.com.avaco.premec.ws.dto.attachment.AttachmentLine;
 import ar.com.avaco.premec.ws.dto.attachment.ResponseAttachmentGetPost;
 import ar.com.avaco.premec.ws.dto.employee.EmployeesInfoReponseSapDTO;
@@ -610,10 +616,10 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 	    }
 
 	    // AÑO
-	    if (filter.getAnio() != null) {
+	    if (filter.getYear() != null) {
 
 	        sql.append("AND YEAR(T0.DateFrom) = ? ");
-	        parametros.add(filter.getAnio());
+	        parametros.add(filter.getYear());
 	    }
 
 	    // MESES
@@ -759,6 +765,94 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 
 
 	
+
+	@Override
+	public PageDTO<RegistroReciboPorUsuarioDTO> listarRecibosPorUsuarioDB(ReciboUsuarioFilterDTO filter) {
+		int pageNumber = filter.getPage() == null || filter.getPage() < 0 ? 0 : filter.getPage();
+		int pageSize = filter.getPageSize() == null || filter.getPageSize() < 1 ? 10 : Math.min(filter.getPageSize(), 100);
+		String username = SecurityContextHolder.getContext().getAuthentication().getName();
+		String usuarioSAP = usuarioPremecService.getUsuarioSAP(username);
+		if (StringUtils.isBlank(usuarioSAP)) throw new ErrorValidationException("El usuario no tiene asociado usuario sap", null);
+		long userId = Long.parseLong(usuarioSAP);
+		StringBuilder where = new StringBuilder(" FROM OTSH T0 INNER JOIN ATC1 T1 ON T1.AbsEntry = T0.AtcEntry WHERE T0.AtcEntry IS NOT NULL AND T0.UserID = ? ");
+		List<Object> params = new ArrayList<>();
+		params.add(userId);
+		if (filter.getYear() != null) {
+			boolean validMonth = filter.getMonth() != null && filter.getMonth() >= 1 && filter.getMonth() <= 12;
+			LocalDate start = LocalDate.of(filter.getYear(), validMonth ? filter.getMonth() : 1, 1);
+			where.append("AND T0.DateFrom >= ? AND T0.DateFrom < ? ");
+			params.add(java.sql.Date.valueOf(start));
+			params.add(java.sql.Date.valueOf(validMonth ? start.plusMonths(1) : start.plusYears(1)));
+		} else if (filter.getMonth() != null && filter.getMonth() >= 1 && filter.getMonth() <= 12) {
+			where.append("AND MONTH(T0.DateFrom) = ? ");
+			params.add(filter.getMonth());
+		}
+		String tipoExpr = "CASE WHEN CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) > 0 THEN LEFT(CAST(T1.[FreeText] AS nvarchar(max)), CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) - 1) ELSE CAST(T1.[FreeText] AS nvarchar(max)) END";
+		if (StringUtils.isNotBlank(filter.getTipo())) { where.append("AND ").append(tipoExpr).append(" = ? "); params.add(filter.getTipo()); }
+		if (StringUtils.isNotBlank(filter.getAttachmentEntry())) { where.append("AND CAST(T0.AtcEntry AS nvarchar(30)) LIKE ? "); params.add("%" + filter.getAttachmentEntry().trim() + "%"); }
+		String select = "SELECT T0.AtcEntry AS AttachmentEntry, T1.AbsEntry, T0.FirstName + ' ' + T0.LastName AS Empleado, YEAR(T0.DateFrom) AS [Year], MONTH(T0.DateFrom) AS [Month], CASE MONTH(T0.DateFrom) WHEN 1 THEN 'enero' WHEN 2 THEN 'febrero' WHEN 3 THEN 'marzo' WHEN 4 THEN 'abril' WHEN 5 THEN 'mayo' WHEN 6 THEN 'junio' WHEN 7 THEN 'julio' WHEN 8 THEN 'agosto' WHEN 9 THEN 'septiembre' WHEN 10 THEN 'octubre' WHEN 11 THEN 'noviembre' WHEN 12 THEN 'diciembre' END AS MonthString, T1.Line AS LineNum, " + tipoExpr + " AS Tipo, CASE WHEN CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) > 0 THEN SUBSTRING(CAST(T1.[FreeText] AS nvarchar(max)), CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) + 1, LEN(CAST(T1.[FreeText] AS nvarchar(max)))) ELSE '' END AS Descripcion, CAST(T1.trgtPath AS nvarchar(max)) + '\\' + CAST(T1.FileName AS nvarchar(max)) + '.' + CAST(T1.FileExt AS nvarchar(max)) AS FilePath, CASE WHEN T1.EDocSign = 'Y' THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Firmado ";
+		List<RegistroReciboPorUsuarioDTO> result = new ArrayList<>();
+		int total = 0;
+		try (Connection conn = sqlcon.getConnection()) {
+			try (PreparedStatement countStmt = conn.prepareStatement("SELECT COUNT(*) " + where.toString())) {
+				for (int i = 0; i < params.size(); i++) countStmt.setObject(i + 1, params.get(i));
+				try (ResultSet rs = countStmt.executeQuery()) { if (rs.next()) total = rs.getInt(1); }
+			}
+			try (PreparedStatement stmt = conn.prepareStatement(select + where.toString() + " ORDER BY T0.DateFrom DESC, T1.Line OFFSET ? ROWS FETCH NEXT ? ROWS ONLY")) {
+				for (int i = 0; i < params.size(); i++) stmt.setObject(i + 1, params.get(i));
+				stmt.setInt(params.size() + 1, pageNumber * pageSize);
+				stmt.setInt(params.size() + 2, pageSize);
+				try (ResultSet rs = stmt.executeQuery()) {
+					while (rs.next()) {
+						RegistroReciboPorUsuarioDTO dto = new RegistroReciboPorUsuarioDTO();
+						dto.setAttachmentEntry(rs.getLong("AttachmentEntry")); dto.setAbsEntry(rs.getLong("AbsEntry"));
+						dto.setEmpleado(rs.getString("Empleado")); dto.setYear(rs.getInt("Year")); dto.setMonth(rs.getInt("Month"));
+						dto.setMonthString(rs.getString("MonthString")); dto.setTipo(rs.getString("Tipo"));
+						dto.setDescripcion(rs.getString("Descripcion")); dto.setFilePath(rs.getString("FilePath"));
+						dto.setFirmado(rs.getBoolean("Firmado")); dto.setLineNum(rs.getLong("LineNum")); result.add(dto);
+					}
+				}
+			}
+		} catch (Exception e) { throw new IllegalStateException("No se pudieron listar los recibos desde la base de datos", e); }
+		PageDTO<RegistroReciboPorUsuarioDTO> resultPage = new PageDTO<>();
+		resultPage.setList(result); resultPage.setTotalReg(total); resultPage.setPage(pageNumber); resultPage.setPageSize(pageSize);
+		return resultPage;
+	}
+
+
+	@Override
+	public List<RegistroReciboPorUsuarioDTO> listarRecibosPendientesFirma() {
+		String username = SecurityContextHolder.getContext().getAuthentication().getName();
+		String usuarioSAP = usuarioPremecService.getUsuarioSAP(username);
+		if (StringUtils.isBlank(usuarioSAP)) throw new ErrorValidationException("El usuario no tiene asociado usuario sap", null);
+		String tipoExpr = "CASE WHEN CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) > 0 THEN LEFT(CAST(T1.[FreeText] AS nvarchar(max)), CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) - 1) ELSE CAST(T1.[FreeText] AS nvarchar(max)) END";
+		String sql = "SELECT T0.AtcEntry AS AttachmentEntry, T1.AbsEntry, T0.FirstName + ' ' + T0.LastName AS Empleado, YEAR(T0.DateFrom) AS [Year], MONTH(T0.DateFrom) AS [Month], CASE MONTH(T0.DateFrom) WHEN 1 THEN 'enero' WHEN 2 THEN 'febrero' WHEN 3 THEN 'marzo' WHEN 4 THEN 'abril' WHEN 5 THEN 'mayo' WHEN 6 THEN 'junio' WHEN 7 THEN 'julio' WHEN 8 THEN 'agosto' WHEN 9 THEN 'septiembre' WHEN 10 THEN 'octubre' WHEN 11 THEN 'noviembre' WHEN 12 THEN 'diciembre' END AS MonthString, T1.Line AS LineNum, " + tipoExpr + " AS Tipo, CASE WHEN CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) > 0 THEN SUBSTRING(CAST(T1.[FreeText] AS nvarchar(max)), CHARINDEX('|', CAST(T1.[FreeText] AS nvarchar(max))) + 1, LEN(CAST(T1.[FreeText] AS nvarchar(max)))) ELSE '' END AS Descripcion, CAST(T1.trgtPath AS nvarchar(max)) + '\\' + CAST(T1.FileName AS nvarchar(max)) + '.' + CAST(T1.FileExt AS nvarchar(max)) AS FilePath, CASE WHEN T1.EDocSign = 'Y' THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Firmado FROM OTSH T0 INNER JOIN ATC1 T1 ON T1.AbsEntry = T0.AtcEntry WHERE T0.AtcEntry IS NOT NULL AND T0.UserID = ? AND (T1.EDocSign IS NULL OR T1.EDocSign <> 'Y') ORDER BY T0.DateFrom DESC, T1.Line";
+		List<RegistroReciboPorUsuarioDTO> result = new ArrayList<>();
+		try (Connection conn = sqlcon.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+			stmt.setLong(1, Long.parseLong(usuarioSAP));
+			try (ResultSet rs = stmt.executeQuery()) {
+				while (rs.next()) {
+					RegistroReciboPorUsuarioDTO dto = new RegistroReciboPorUsuarioDTO();
+					dto.setAttachmentEntry(rs.getLong("AttachmentEntry"));
+					dto.setAbsEntry(rs.getLong("AbsEntry"));
+					dto.setEmpleado(rs.getString("Empleado"));
+					dto.setYear(rs.getInt("Year"));
+					dto.setMonth(rs.getInt("Month"));
+					dto.setMonthString(rs.getString("MonthString"));
+					dto.setTipo(rs.getString("Tipo"));
+					dto.setDescripcion(rs.getString("Descripcion"));
+					dto.setFilePath(rs.getString("FilePath"));
+					dto.setFirmado(rs.getBoolean("Firmado"));
+					dto.setLineNum(rs.getLong("LineNum"));
+					result.add(dto);
+				}
+			}
+		} catch (Exception e) {
+			throw new IllegalStateException("No se pudieron listar los recibos pendientes de firma", e);
+		}
+		return result;
+	}
+
 	@Override
 	public List<RegistroReciboPorUsuarioDTO> listarRecibosPorUsuario() {
 
@@ -826,6 +920,26 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 		return contenido;
 	}
 
+	@Override
+	public ArchivoDTO descargarGrupoRecibos(List<RegistroReciboPorUsuarioDTO> recibos) throws IOException {
+		if (recibos == null || recibos.isEmpty()) {
+			throw new ErrorValidationException("Debe seleccionar al menos un recibo.", null);
+		}
+		PDFMergerUtility merger = new PDFMergerUtility();
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		merger.setDestinationStream(output);
+		for (RegistroReciboPorUsuarioDTO recibo : recibos) {
+			if (recibo == null || StringUtils.isBlank(recibo.getFilePath())) {
+				throw new ErrorValidationException("Uno de los recibos seleccionados no tiene archivo asociado.", null);
+			}
+			merger.addSource(new ByteArrayInputStream(obtenerReciboPDF(recibo)));
+		}
+		merger.mergeDocuments(MemoryUsageSetting.setupMainMemoryOnly());
+		ArchivoDTO archivo = new ArchivoDTO();
+		archivo.setFile(output.toByteArray());
+		archivo.setFileName("grupo-recibos.pdf");
+		return archivo;
+	}
 	@Override
 	public void firmarReciboPDF(RegistroReciboPorUsuarioDTO recibo) throws IOException {
 

@@ -12,7 +12,7 @@ public class ReciboFilterDTO extends SortPageDTO {
 
 	private List<Long> empleadosIds;
 
-	private Integer anio;
+	private Integer year;
 
 	private List<Integer> meses;
 
@@ -26,12 +26,21 @@ public class ReciboFilterDTO extends SortPageDTO {
 		this.empleadosIds = empleadosIds;
 	}
 
+	public Integer getYear() {
+		return year;
+	}
+
+	public void setYear(Integer year) {
+		this.year = year;
+	}
+
+	/** Compatibility alias for clients that still send the Spanish parameter name. */
 	public Integer getAnio() {
-		return anio;
+		return year;
 	}
 
 	public void setAnio(Integer anio) {
-		this.anio = anio;
+		this.year = anio;
 	}
 
 	public List<Integer> getMeses() {

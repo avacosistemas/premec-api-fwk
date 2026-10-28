@@ -4,6 +4,7 @@ Esta carpeta mantiene un inventario de funcionalidades observado en el código d
 
 - [Inventario funcional](funcionalidades.md): módulos, acciones y evidencia en el código.
 - [Seguimiento](seguimiento.md): estado documental y pendientes de validación funcional/operativa.
+- [Flujo de recibos del usuario](recibos.md): listado SAP y paginado desde base, consulta de pendientes de firma y resolución del usuario autenticado.
 
 ## Alcance y criterio
 

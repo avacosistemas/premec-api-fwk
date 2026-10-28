@@ -25,6 +25,7 @@ import ar.com.avaco.fwk.core.component.dto.PageDTO;
 import ar.com.avaco.premec.utils.BuscarTextoYStripper;
 import ar.com.avaco.premec.ws.dto.ArchivoDTO;
 import ar.com.avaco.premec.ws.dto.ReciboFilterDTO;
+import ar.com.avaco.premec.ws.dto.ReciboUsuarioFilterDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.ArchivoReciboDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.ReciboSueldoDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.RegistroReciboPorUsuarioDTO;
@@ -92,6 +93,34 @@ public class ReciboSueldoRestController {
 		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
 	}
 
+
+
+
+	@RequestMapping(value = "/listarRecibosPendientesFirma", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<JSONResponse> listarRecibosPendientesFirma() {
+		JSONResponse response = new JSONResponse();
+		try {
+			response.setData(this.reciboService.listarRecibosPendientesFirma());
+			response.setStatus(JSONResponse.OK);
+		} catch (Exception e) {
+			response.setStatus(JSONResponse.ERROR);
+			response.setData(e);
+			e.printStackTrace();
+		}
+		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
+	}
+	@RequestMapping(value = "/listarRecibosPorUsuarioDB", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<JSONResponse> listarRecibosPorUsuarioDB(ReciboUsuarioFilterDTO filter) {
+		JSONResponse response = new JSONResponse();
+		try {
+			PageDTO<RegistroReciboPorUsuarioDTO> pageDTO = this.reciboService.listarRecibosPorUsuarioDB(filter);
+			response.setPage(pageDTO.toPageRepsponse()); response.setData(pageDTO.getList()); response.setStatus(JSONResponse.OK);
+		} catch (Exception e) {
+			response.setStatus(JSONResponse.ERROR); response.setData(e); e.printStackTrace();
+		}
+		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
+	}
+
 	@RequestMapping(value = "/descargarRecibo", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<JSONResponse> descargarRecibo(RegistroReciboPorUsuarioDTO recibo) {
 		JSONResponse response = new JSONResponse();
@@ -111,6 +140,19 @@ public class ReciboSueldoRestController {
 		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
 	}
 
+	@RequestMapping(value = "/descargarGrupoRecibos", method = RequestMethod.POST, produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<JSONResponse> descargarGrupoRecibos(@RequestBody List<RegistroReciboPorUsuarioDTO> recibos) {
+		JSONResponse response = new JSONResponse();
+		try {
+			response.setData(this.reciboService.descargarGrupoRecibos(recibos));
+			response.setStatus(JSONResponse.OK);
+		} catch (Exception e) {
+			response.setStatus(JSONResponse.ERROR);
+			response.setData(e);
+			e.printStackTrace();
+		}
+		return new ResponseEntity<JSONResponse>(response, HttpStatus.OK);
+	}
 	@RequestMapping(value = "/firmarRecibo", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<JSONResponse> firmarRecibo(RegistroReciboPorUsuarioDTO recibo) {
 		JSONResponse response = new JSONResponse();

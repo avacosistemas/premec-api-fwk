@@ -160,8 +160,15 @@ public class RestTemplateFactory {
 			defaultHeaders.set("Prefer", "odata.maxpagesize=0");
 
 			ClientHttpRequestInterceptor interceptor = (request, requestBody, execution) -> {
+				boolean monitorQuery = request.getURI().getRawPath()
+						.contains("$crossjoin(Activities,EmployeesInfo,ServiceCalls)");
+				String monitorPrefer = monitorQuery ? request.getHeaders().getFirst("Prefer") : null;
 
 				request.getHeaders().putAll(defaultHeaders);
+
+				if (monitorPrefer != null) {
+					request.getHeaders().set("Prefer", monitorPrefer);
+				}
 
 				return execution.execute(request, requestBody);
 			};

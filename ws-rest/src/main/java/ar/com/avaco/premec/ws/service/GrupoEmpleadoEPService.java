@@ -8,6 +8,6 @@ import ar.com.avaco.premec.dto.UsuarioEmpleadoDTO;
 
 public interface GrupoEmpleadoEPService extends CRUDEPService<Long, GrupoEmpleadoDTO> {
 
-	List<UsuarioEmpleadoDTO> listUsuarios();
+	List<UsuarioEmpleadoDTO> listEmpleados();
 
 }

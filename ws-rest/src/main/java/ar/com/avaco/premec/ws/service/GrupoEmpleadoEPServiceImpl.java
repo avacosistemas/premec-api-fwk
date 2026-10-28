@@ -6,6 +6,7 @@ import java.util.List;
 
 import javax.annotation.Resource;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -26,10 +27,13 @@ public class GrupoEmpleadoEPServiceImpl
 	private UsuarioPremecService usuarioPremecService;
 
 	@Override
-	public List<UsuarioEmpleadoDTO> listUsuarios() {
+	public List<UsuarioEmpleadoDTO> listEmpleados() {
 		List<UsuarioPremec> usrs = this.usuarioPremecService.list();
 		List<UsuarioEmpleadoDTO> usrdtolist = new ArrayList<UsuarioEmpleadoDTO>();
-		usrs.stream().forEach(x -> usrdtolist.add(new UsuarioEmpleadoDTO(x.getId(), x.getNombreApellido(), x.getUsuariosap())));
+		usrs.stream().forEach(x -> {
+			if (StringUtils.isNotBlank(x.getUsuariosap()))
+				usrdtolist.add(new UsuarioEmpleadoDTO(x.getId(), x.getNombreApellido(), x.getUsuariosap()));
+		});
 		usrdtolist.sort(new Comparator<UsuarioEmpleadoDTO>() {
 			@Override
 			public int compare(UsuarioEmpleadoDTO o1, UsuarioEmpleadoDTO o2) {
@@ -59,8 +63,8 @@ public class GrupoEmpleadoEPServiceImpl
 		GrupoEmpleadoDTO dto = new GrupoEmpleadoDTO();
 		dto.setId(entity.getId());
 		dto.setNombre(entity.getNombre());
-		entity.getUsuarios().stream()
-				.forEach(usr -> dto.getUsuarios().add(new UsuarioEmpleadoDTO(usr.getId(), usr.getNombreApellidoUsername(), usr.getUsuariosap())));
+		entity.getUsuarios().stream().forEach(usr -> dto.getUsuarios()
+				.add(new UsuarioEmpleadoDTO(usr.getId(), usr.getNombreApellidoUsername(), usr.getUsuariosap())));
 		return dto;
 	}
 

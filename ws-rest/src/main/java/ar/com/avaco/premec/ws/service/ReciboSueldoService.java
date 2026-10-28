@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.util.List;
 
 import ar.com.avaco.fwk.core.component.dto.PageDTO;
+import ar.com.avaco.premec.ws.dto.ArchivoDTO;
 import ar.com.avaco.premec.ws.dto.ReciboFilterDTO;
+import ar.com.avaco.premec.ws.dto.ReciboUsuarioFilterDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.ReciboSueldoDTO;
 import ar.com.avaco.premec.ws.dto.timesheet.RegistroReciboPorUsuarioDTO;
 
@@ -18,10 +20,16 @@ public interface ReciboSueldoService {
 
 	byte[] obtenerReciboPDF(RegistroReciboPorUsuarioDTO recibo) throws IOException;
 
+	ArchivoDTO descargarGrupoRecibos(List<RegistroReciboPorUsuarioDTO> recibos) throws IOException;
+
 	List<ReciboSueldoDTO> procesarRecibos(String tipo, byte[] archivo) throws IOException;
 
 	void firmarReciboPDF(RegistroReciboPorUsuarioDTO recibo) throws IOException;
 
 	PageDTO<RegistroReciboPorUsuarioDTO> listarRecibos(ReciboFilterDTO filter);
+
+	PageDTO<RegistroReciboPorUsuarioDTO> listarRecibosPorUsuarioDB(ReciboUsuarioFilterDTO filter);
+
+	List<RegistroReciboPorUsuarioDTO> listarRecibosPendientesFirma();
 
 }
