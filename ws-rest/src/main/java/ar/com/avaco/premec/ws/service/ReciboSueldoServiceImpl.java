@@ -948,9 +948,13 @@ public class ReciboSueldoServiceImpl extends AbstractSapService implements Recib
 		String usuarioSAP = this.usuarioPremecService.getUsuarioSAP(name);
 		EmployeesInfoReponseSapDTO empleado = this.employeeService.getById(Long.parseLong(usuarioSAP));
 
-		ResponseAttachmentGetPost attachmentFirma = attachmentService.getAttachment(empleado.getAttachmentEntry());
-		Optional<AttachmentLine> firstFirma = attachmentFirma.getAttachments2Lines().stream()
-				.filter(x -> x.getFreeText() != null && x.getFreeText().contains("firma")).findFirst();
+		Optional<AttachmentLine> firstFirma = null;
+		if (empleado.getAttachmentEntry() != null) {
+			ResponseAttachmentGetPost attachmentFirma = attachmentService.getAttachment(empleado.getAttachmentEntry());
+			firstFirma = attachmentFirma.getAttachments2Lines().stream()
+					.filter(x -> x.getFreeText() != null && x.getFreeText().contains("firma")).findFirst();
+		}
+		
 		if (firstFirma.isEmpty()) {
 			throw new ErrorValidationException("Falta cargar tu firma en el sistema para poder firmar el recibo", null);
 		}
