@@ -27,28 +27,24 @@ public class ReporteServiceImpl implements ReporteService {
 	private MailSenderSMTPService mailSenderSMTPService;
 
 	@Override
-	public void sendMail(String email, String activityCode, String bodyMail, String subject) {
+	public void sendMail(String email, String activityCode, String bodyMail, String subject, String path) {
 
 		File file = new File(informePath + "\\" + activityCode + ".pdf");
 
 		List<File> files = new ArrayList<>();
 		files.add(file);
 
+		if (path != null) {
+			File att = new File(path);
+			files.add(att);
+		}
+
 		if (StringUtils.isBlank(email)) {
-			mailSenderSMTPService.sendMail(emailFrom, emailFrom, subject,
-					"Cliente sin Correo definido", files);
+			mailSenderSMTPService.sendMail(emailFrom, emailFrom, subject, "Cliente sin Correo definido", files);
 		} else {
-			mailSenderSMTPService.sendMail(emailFrom, email, emailCC, subject,
-					bodyMail, files);
+			mailSenderSMTPService.sendMail(emailFrom, email, emailCC, subject, bodyMail, files);
 		}
 
 	}
 
-	public void setMailSenderSMTPService(MailSenderSMTPService mailSenderSMTPService) {
-		this.mailSenderSMTPService = mailSenderSMTPService;
-	}
-
-	public void setEmailCC(String emailCC) {
-		this.emailCC = emailCC;
-	}
 }
