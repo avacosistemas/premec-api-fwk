@@ -33,17 +33,17 @@ public class ReporteEPServiceImpl implements ReporteEPService {
 	@Value("${informe.path}")
 	private String informePath;
 
-	@Value("${email.bodyMail}")
-	private String bodyMail;
-
 	@Value("${email.subjectMail}")
 	private String subjectMail;
 
-	@Value("${email.bodyMailEntrega}")
-	private String bodyMailEntrega;
+	@Value("${email.bodyMail}")
+	private String bodyMail;
 
 	@Value("${email.subjectMailEntrega}")
 	private String subjectMailEntrega;
+
+	@Value("${email.bodyMailEntrega}")
+	private String bodyMailEntrega;
 
 	private String body;
 

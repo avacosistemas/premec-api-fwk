@@ -1,11 +1,13 @@
 package ar.com.avaco.premec.sap.service;
 
+import java.util.List;
+
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import ar.com.avaco.premec.sap.dto.ItemCodeDTO;
 import ar.com.avaco.premec.sap.exception.SapBusinessException;
@@ -17,15 +19,30 @@ public class ItemCodeServiceImpl extends AbstractSapService implements ItemCodeS
 	@Override
 	public ItemCodeDTO getByItemCode(String itemCode) throws SapBusinessException {
 		String itemUrl = urlSAP + "/Items?$filter=ItemCode eq '{itemCode}'".replace("{itemCode}", itemCode);
-		ResponseEntity<String> response = getRestTemplate().doExchange(itemUrl, HttpMethod.GET, null, String.class);
+		ResponseEntity<ItemsResponseDTO> response = getRestTemplate().doExchange(itemUrl, HttpMethod.GET, null,
+				ItemsResponseDTO.class);
 
-		JsonObject body = gson.fromJson(response.getBody(), JsonObject.class);
-		JsonArray items = body.getAsJsonArray("value");	
-		if (items == null || items.size() == 0) {
+		ItemsResponseDTO body = response.getBody();
+		if (body == null || body.getValue() == null || body.getValue().isEmpty()) {
 			return null;
 		}
 
-		return gson.fromJson(items.get(0), ItemCodeDTO.class);
+		return body.getValue().get(0);
+	}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	private static class ItemsResponseDTO {
+
+		@JsonProperty("value")
+		private List<ItemCodeDTO> value;
+
+		public List<ItemCodeDTO> getValue() {
+			return value;
+		}
+
+		public void setValue(List<ItemCodeDTO> value) {
+			this.value = value;
+		}
 	}
 
 }
